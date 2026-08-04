@@ -1,0 +1,114 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: classpod-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-classpod}
+      POSTGRES_USER: ${POSTGRES_USER:-classpod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-classpod}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-classpod} -d ${POSTGRES_DB:-classpod}']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: classpod-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ai-detection:
+    build:
+      context: ./apps/ai-detection
+      dockerfile: Dockerfile
+    container_name: classpod-ai-detection
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:5000/health']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: classpod-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-classpod}:${POSTGRES_PASSWORD:-classpod}@postgres:5432/${POSTGRES_DB:-classpod}?schema=public
+      REDIS_URL: redis://redis:6379
+      AI_DETECTION_SERVICE_URL: http://ai-detection:5000
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-local-dev-secret-key}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-chars-long}
+      JWT_EXPIRES_IN: 1d
+      CORS_ORIGINS: '*'
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+    ports:
+      - '4000:4000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ai-detection:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:4000/health']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.worker
+    container_name: classpod-worker
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-classpod}:${POSTGRES_PASSWORD:-classpod}@postgres:5432/${POSTGRES_DB:-classpod}?schema=public
+      REDIS_URL: redis://redis:6379
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: classpod-web
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '3000:3000'
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:80/health']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres-data:
+  redis-data:

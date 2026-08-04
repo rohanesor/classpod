@@ -1,0 +1,29 @@
+name: EC2 Automated Deployment (SSH)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to AWS EC2 Ubuntu 24.04
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/classpod
+            git pull origin main
+            cp .env.production .env
+            docker compose up -d --build
+            docker exec classpod-api npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+            docker compose ps

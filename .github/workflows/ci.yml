@@ -1,0 +1,187 @@
+name: ClassPod CI Pipeline
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint & Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+  typecheck:
+    name: TypeScript Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate --schema apps/api/prisma/schema.prisma
+
+      - name: Typecheck NestJS API
+        run: npx tsc --noEmit -p apps/api/tsconfig.json
+
+      - name: Typecheck Next.js Web Client
+        run: npx tsc --noEmit -p apps/web/tsconfig.json
+
+  tests:
+    name: Unit & Integration Tests
+    needs: [lint, typecheck]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: classpod_test
+          POSTGRES_USER: classpod
+          POSTGRES_PASSWORD: classpod_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Push Test Database Schema
+        env:
+          DATABASE_URL: postgresql://classpod:classpod_password@localhost:5432/classpod_test?schema=public
+        run: npx prisma db push --schema apps/api/prisma/schema.prisma
+
+      - name: Run Tests
+        env:
+          DATABASE_URL: postgresql://classpod:classpod_password@localhost:5432/classpod_test?schema=public
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: super-secret-jwt-key-minimum-32-chars-long
+          GATEWAY_SHARED_SECRET: local-dev-secret-key
+        run: npm test --if-present
+
+  build:
+    name: Build Bundles
+    needs: [tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate --schema apps/api/prisma/schema.prisma
+
+      - name: Build NestJS API
+        run: npm run build --workspace=@classpod/api
+
+      - name: Build Next.js Web Static Export
+        run: npm run build --workspace=@classpod/web
+
+      - name: Upload Web Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-static-export
+          path: apps/web/out
+          retention-days: 7
+
+  docker-build:
+    name: Docker Container Builds
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          tags: classpod-api:latest
+
+      - name: Build Worker Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/api/Dockerfile.worker
+          push: false
+          tags: classpod-worker:latest
+
+      - name: Build AI Detection Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/ai-detection
+          file: apps/ai-detection/Dockerfile
+          push: false
+          tags: classpod-ai-detection:latest
+
+      - name: Build Web Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          tags: classpod-web:latest

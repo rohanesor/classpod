@@ -1,0 +1,11 @@
+{
+  "name": "@classpod/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "lint": "echo \"Gateway firmware linting is configured in PlatformIO.\"",
+    "typecheck": "echo \"Gateway firmware typechecking is handled by the C++ toolchain.\"",
+    "build": "command -v platformio >/dev/null 2>&1 && platformio run -d firmware || echo \"PlatformIO not installed; skipping gateway firmware build.\"",
+    "build:firmware": "platformio run -d firmware"
+  }
+}

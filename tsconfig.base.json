@@ -1,0 +1,10 @@
+{
+  "extends": "@classpod/typescript-config/base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@classpod/shared": ["packages/shared/src/index.ts"],
+      "@classpod/shared/*": ["packages/shared/src/*"]
+    }
+  }
+}

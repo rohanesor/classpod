@@ -1,0 +1,344 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  TEACHER
+  STUDENT
+  ADMIN
+}
+
+model User {
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  role                UserRole
+  name                String
+  passwordHash        String
+  avatarUrl           String?
+  isActive            Boolean              @default(true)
+  heardFrom           String?
+  onboardingReason    String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  pods                Pod[]
+  enrollments         Enrollment[]
+  sessions            AttendanceSession[]
+  attendanceDecisions AttendanceDecision[]
+  notifications       Notification[]
+  automationRuns      AutomationRun[]
+}
+
+enum PodStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  LEFT
+}
+
+model Pod {
+  id          String              @id @default(cuid())
+  name        String
+  subjectCode String
+  description String?
+  joinCode    String              @unique
+  teacherId   String
+  semester    String?
+  section     String?
+  status      PodStatus           @default(ACTIVE)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  teacher     User                @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  enrollments Enrollment[]
+  sessions    AttendanceSession[]
+  automationRuns AutomationRun[]
+
+  @@index([teacherId])
+}
+
+model Enrollment {
+  id        String           @id @default(cuid())
+  podId     String
+  studentId String
+  joinedAt  DateTime         @default(now())
+  leftAt    DateTime?
+  status    EnrollmentStatus @default(ACTIVE)
+  pod       Pod              @relation(fields: [podId], references: [id], onDelete: Cascade)
+  student   User             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([podId, studentId])
+  @@index([studentId])
+}
+
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  actorUserId   String?
+  action        String
+  entityType    String
+  entityId      String?
+  requestId     String
+  correlationId String
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  @@index([actorUserId])
+  @@index([correlationId])
+  @@index([createdAt])
+}
+
+model EventLog {
+  id            String   @id @default(cuid())
+  eventName     String
+  requestId     String?
+  correlationId String?
+  payload       Json?
+  createdAt     DateTime @default(now())
+
+  @@index([eventName])
+  @@index([correlationId])
+  @@index([createdAt])
+}
+
+model RequestLog {
+  id            String   @id @default(cuid())
+  method        String
+  url           String
+  statusCode    Int?
+  responseTime  Int?
+  ip            String?
+  userAgent     String?
+  requestId     String?
+  correlationId String?
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([requestId])
+  @@index([correlationId])
+}
+
+enum AttendanceSessionStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum AttendanceDecisionStatus {
+  PENDING
+  CHECKED_IN
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+model AttendanceSession {
+  id        String                  @id @default(cuid())
+  podId     String
+  teacherId String
+  status    AttendanceSessionStatus @default(ACTIVE)
+  duration  Int                     @default(90)
+  startedAt DateTime                @default(now())
+  expiresAt      DateTime
+  endedAt        DateTime?
+  createdAt      DateTime                @default(now())
+  challengeToken String?                 // BLE verification challenge token
+  pod            Pod                     @relation(fields: [podId], references: [id], onDelete: Cascade)
+  teacher        User                    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  decisions      AttendanceDecision[]
+  observations   GatewayObservation[]
+  automationRuns AutomationRun[]
+
+  @@index([podId])
+  @@index([teacherId])
+  @@index([status])
+  @@index([podId, status])
+  @@index([status, expiresAt])
+}
+
+model AttendanceDecision {
+  id          String                   @id @default(cuid())
+  sessionId   String
+  studentId   String
+  status      AttendanceDecisionStatus @default(PENDING)
+  explanation String?
+  requestedAt DateTime                 @default(now())
+  respondedAt DateTime?
+  session     AttendanceSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student     User                     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  signals VerificationSignal[]
+  results VerificationResult[]
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum NotificationPriority {
+  LOW
+  DEFAULT
+  HIGH
+}
+
+model Notification {
+  id          String               @id @default(cuid())
+  userId      String
+  type        String               // e.g., ATTENDANCE_STARTED, ATTENDANCE_REMINDER, GENERAL, SYSTEM
+  title       String
+  body        String
+  status      NotificationStatus   @default(PENDING)
+  priority    NotificationPriority @default(DEFAULT)
+  expiresAt   DateTime?
+  metadata    Json?
+  createdAt   DateTime             @default(now())
+  deliveredAt DateTime?
+  readAt      DateTime?
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+
+enum GatewayNodeStatus {
+  ONLINE
+  OFFLINE
+}
+
+enum GatewayObservationType {
+  BLE_DETECTED
+  PERSON_COUNT
+  HEARTBEAT
+}
+
+model Gateway {
+  id              String            @id @default(cuid())
+  classroom       String
+  name            String
+  status          GatewayNodeStatus @default(OFFLINE)
+  firmwareVersion String?
+  lastHeartbeat   DateTime?
+  createdAt       DateTime          @default(now())
+
+  observations GatewayObservation[]
+
+  @@index([status])
+  @@index([classroom])
+}
+
+model GatewayObservation {
+  id        String                 @id @default(cuid())
+  gatewayId String
+  sessionId String?
+  type      GatewayObservationType
+  payload   Json
+  createdAt DateTime               @default(now())
+
+  gateway Gateway            @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
+  session AttendanceSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([gatewayId])
+  @@index([sessionId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([gatewayId, createdAt])
+  @@index([sessionId, createdAt])
+}
+
+enum SignalSource {
+  CHECK_IN
+  BLE
+  PERSON_COUNT
+  MANUAL
+}
+
+model VerificationSignal {
+  id                   String         @id @default(cuid())
+  attendanceDecisionId String
+  source               SignalSource
+  payload              Json
+  createdAt            DateTime       @default(now())
+
+  decision AttendanceDecision @relation(fields: [attendanceDecisionId], references: [id], onDelete: Cascade)
+
+  @@index([attendanceDecisionId])
+  @@index([source])
+}
+
+model VerificationResult {
+  id                   String         @id @default(cuid())
+  attendanceDecisionId String
+  policyVersion        String
+  createdAt            DateTime       @default(now())
+
+  decision AttendanceDecision @relation(fields: [attendanceDecisionId], references: [id], onDelete: Cascade)
+
+  @@index([attendanceDecisionId])
+}
+
+enum AutomationRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ArtifactType {
+  EXCEL_REPORT
+  PDF_REPORT
+  AI_SUMMARY
+}
+
+model AutomationRun {
+  id            String              @id @default(cuid())
+  sessionId     String
+  podId         String
+  teacherId     String
+  status        AutomationRunStatus @default(PENDING)
+  triggeredBy   String              @default("system")
+  startedAt     DateTime?
+  completedAt   DateTime?
+  error         String?
+  summary       String?             @db.Text
+  whatsappMessage String?           @db.Text
+  whatsappSentAt DateTime?
+  createdAt     DateTime            @default(now())
+
+  session       AttendanceSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  pod           Pod                 @relation(fields: [podId], references: [id], onDelete: Cascade)
+  teacher       User                @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  artifacts     AutomationArtifact[]
+
+  @@index([sessionId])
+  @@index([teacherId])
+  @@index([teacherId, createdAt])
+}
+
+model AutomationArtifact {
+  id            String              @id @default(cuid())
+  runId         String
+  type          ArtifactType
+  filename      String
+  mimeType      String
+  storagePath   String
+  sizeBytes     Int?
+  createdAt     DateTime            @default(now())
+
+  run           AutomationRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+}
