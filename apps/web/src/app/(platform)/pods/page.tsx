@@ -307,7 +307,12 @@ export default function PodsPage() {
       try {
         const response = await apiClient.get<any>(`/attendance/session/${attendanceSession.id}/live`);
         if (response.data) {
-          setAttendanceSession(response.data);
+          setAttendanceSession((prev: any) => ({
+            ...prev,
+            ...response.data,
+            id: response.data?.id || prev?.id,
+            podId: response.data?.podId || prev?.podId,
+          }));
         }
       } catch (err) {
         window.console.error('Failed to poll live attendance stats:', err);
@@ -1674,7 +1679,12 @@ export default function PodsPage() {
                               });
                               const liveRes = await apiClient.get<any>(`/attendance/session/${attendanceSession.id}/live`);
                               if (liveRes.data) {
-                                setAttendanceSession(liveRes.data);
+                                setAttendanceSession((prev: any) => ({
+                                  ...prev,
+                                  ...liveRes.data,
+                                  id: liveRes.data?.id || prev?.id,
+                                  podId: liveRes.data?.podId || prev?.podId,
+                                }));
                               }
                             } catch (err) {
                               window.console.error('Trigger capture error:', err);

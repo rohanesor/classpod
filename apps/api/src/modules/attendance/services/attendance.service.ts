@@ -570,6 +570,8 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     };
 
     return {
+      id: session.id,
+      podId: session.podId,
       status: session.status,
       expiresAt: session.expiresAt,
       metrics: {
