@@ -67,7 +67,6 @@ export function useAttendanceCameraFlow({
   const acquireFrame = useCallback(
     async (frameIdx: number): Promise<FrameDetection> => {
       const now = Date.now();
-      const expected = expectedStudentsCount || 32;
 
       // Check if real hardware observations exist from the ESP32
       try {
