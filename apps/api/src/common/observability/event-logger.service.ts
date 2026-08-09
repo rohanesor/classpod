@@ -16,7 +16,12 @@ export class EventLoggerService {
   ) {}
 
   audit(eventName: string, payload: EventLogPayload): void {
-    this.logger.log(this.withContext({ eventType: 'audit', eventName, ...payload }));
+    const formatted = this.withContext({ eventType: 'audit', eventName, ...payload });
+    if (process.env.NODE_ENV === 'production') {
+      this.logger.log(JSON.stringify(formatted));
+    } else {
+      this.logger.log(formatted);
+    }
 
     const context = this.requestContextService.getContext();
     const requestId = context?.requestId ?? 'system';
@@ -40,7 +45,12 @@ export class EventLoggerService {
   }
 
   event(eventName: string, payload: EventLogPayload): void {
-    this.logger.log(this.withContext({ eventType: 'event', eventName, ...payload }));
+    const formatted = this.withContext({ eventType: 'event', eventName, ...payload });
+    if (process.env.NODE_ENV === 'production') {
+      this.logger.log(JSON.stringify(formatted));
+    } else {
+      this.logger.log(formatted);
+    }
 
     const context = this.requestContextService.getContext();
     const requestId = context?.requestId ?? null;
@@ -61,7 +71,12 @@ export class EventLoggerService {
   }
 
   error(eventName: string, payload: EventLogPayload): void {
-    this.logger.error(this.withContext({ eventType: 'error', eventName, ...payload }));
+    const formatted = this.withContext({ eventType: 'error', eventName, ...payload });
+    if (process.env.NODE_ENV === 'production') {
+      this.logger.error(JSON.stringify(formatted));
+    } else {
+      this.logger.error(formatted);
+    }
   }
 
   private withContext(payload: Record<string, unknown>): Record<string, unknown> {

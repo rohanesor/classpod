@@ -92,3 +92,100 @@ resource "aws_ecs_service" "api" {
     container_port   = 4000
   }
 }
+
+# --- Worker Task Definition & Service ---
+resource "aws_ecs_task_definition" "worker" {
+  family                   = "classpod-worker"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 256  # 0.25 vCPU
+  memory                   = 512  # 512 MB RAM
+  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
+  task_role_arn            = aws_iam_role.ecs_task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "worker"
+      image     = "${aws_ecr_repository.worker.repository_url}:latest"
+      essential = true
+      environment = [
+        { name = "NODE_ENV", value = "production" },
+        { name = "STORAGE_DRIVER", value = "s3" },
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "AWS_S3_BUCKET", value = aws_s3_bucket.storage.id }
+      ]
+      secrets = [
+        { name = "DATABASE_URL", valueFrom = "${aws_secretsmanager_secret.db_secret.arn}:DATABASE_URL::" },
+        { name = "REDIS_URL", valueFrom = "${aws_secretsmanager_secret.redis_secret.arn}:REDIS_URL::" }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.worker_logs.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "worker"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_service" "worker" {
+  name            = "classpod-worker-service"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.worker.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets         = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+    security_groups = [aws_security_group.ecs_sg.id]
+  }
+}
+
+# --- AI Detection Task Definition & Service ---
+resource "aws_ecs_task_definition" "ai" {
+  family                   = "classpod-ai"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 1024 # 1 vCPU
+  memory                   = 2048 # 2 GB RAM
+  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
+  task_role_arn            = aws_iam_role.ecs_task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "ai-detection"
+      image     = "${aws_ecr_repository.ai.repository_url}:latest"
+      essential = true
+      portMappings = [
+        {
+          containerPort = 5000
+          hostPort      = 5000
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.ai_logs.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "ai"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_service" "ai" {
+  name            = "classpod-ai-service"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.ai.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets         = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+    security_groups = [aws_security_group.ecs_sg.id]
+  }
+}
+
