@@ -10,6 +10,7 @@ COPY apps/web ./apps/web
 
 # Install dependencies and build static Next.js export
 RUN npm ci
+RUN npm run build --workspace=@classpod/shared
 RUN npm run build --workspace=@classpod/web
 
 # Stage 2: Serve via Nginx

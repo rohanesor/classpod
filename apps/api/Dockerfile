@@ -10,6 +10,7 @@ COPY apps/api ./apps/api
 
 # Install dependencies and build shared packages & NestJS API
 RUN npm ci
+RUN npm run build --workspace=@classpod/shared
 RUN npx prisma generate --schema apps/api/prisma/schema.prisma
 RUN npm run build --workspace=@classpod/api
 
