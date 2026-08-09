@@ -3,7 +3,6 @@ import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { Roles } from '@/modules/auth/decorators/roles.decorator';
 import { RequestContextService } from '@/common/observability/request-context.service';
-import { PrismaService } from '@/common/database/prisma.service';
 import { UserRole, SignalSource } from '@prisma/client';
 import { VerificationService } from '../services/verification.service';
 import { SubmitSignalDto } from '../dtos/submit-signal.dto';

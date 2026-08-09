@@ -8,8 +8,8 @@ export class YoloDetectionService implements IPersonDetector {
 
   async detect(
     imagePayload: string,
-    expectedCount: number,
-    frameBytes?: number,
+    _expectedCount: number,
+    _frameBytes?: number,
   ) {
     const startTime = Date.now();
     try {

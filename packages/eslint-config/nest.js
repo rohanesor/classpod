@@ -11,6 +11,11 @@ export default [
         process: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        AbortController: 'readonly',
+        fetch: 'readonly',
+        NodeJS: 'readonly',
       },
     },
     rules: {

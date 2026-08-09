@@ -40,7 +40,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
         for (const session of activeSessions) {
           await this.lazyExpireCheck(session.id);
         }
-      } catch (err) {
+      } catch {
         // Silent background check
       }
     }, 5000);
