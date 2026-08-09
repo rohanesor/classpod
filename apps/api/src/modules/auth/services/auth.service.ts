@@ -17,9 +17,11 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto, ip: string, userAgent: string) {
+    const normalizedEmail = (dto?.email || '').trim().toLowerCase();
+
     // 1. Verify email uniqueness
     const existingUser = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() },
+      where: { email: normalizedEmail },
     });
 
     if (existingUser) {
@@ -32,7 +34,7 @@ export class AuthService {
     // 3. Create user
     const user = await this.prisma.user.create({
       data: {
-        email: dto.email.toLowerCase(),
+        email: normalizedEmail,
         passwordHash,
         name: dto.name,
         role: dto.role,
@@ -77,12 +79,14 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, ip: string, userAgent: string) {
+    const normalizedEmail = (dto?.email || '').trim().toLowerCase();
+
     // 1. Check rate limits
     await this.rateLimiter.checkLimit(ip);
 
     // 2. Find user by email
     const user = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() },
+      where: { email: normalizedEmail },
     });
 
     // 3. Verify password
