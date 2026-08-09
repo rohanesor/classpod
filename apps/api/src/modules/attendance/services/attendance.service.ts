@@ -226,6 +226,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       duration: durationSeconds,
       studentIds,
       podName: pod.name,
+      hasBaselineObservation: !!dto.baselineObservation,
     });
 
     return session;

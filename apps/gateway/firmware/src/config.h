@@ -41,7 +41,7 @@
 // ==========================================
 // Timing Parameters (millis-based)
 // ==========================================
-#define HEARTBEAT_INTERVAL_MS       10000UL   // 10 seconds fast poll
+#define HEARTBEAT_INTERVAL_MS       1000UL    // 1 second fast poll for instant capture triggers
 #define WIFI_RECONNECT_INTERVAL_MS  15000UL   // 15 seconds retry (allows WPA2/DHCP to complete)
 #define OBSERVATION_INTERVAL_MS     60000UL   // 60 seconds observation emission
 

@@ -18,6 +18,7 @@ export class SessionBindingListener {
     podId: string;
     teacherId: string;
     podName?: string;
+    hasBaselineObservation?: boolean;
   }): Promise<void> {
     try {
       this.logger.log(`Handling attendance.started for session ${payload.sessionId}`);
@@ -45,9 +46,13 @@ export class SessionBindingListener {
         this.gatewayService.bindSession(gateway.id, payload.sessionId, payload.podId, podName);
         this.logger.log(`Bound Gateway ${gateway.id} (${gateway.name}) to active session ${payload.sessionId}`);
 
-        // AUTOMATIC HARDWARE CAPTURE: Queue capture command so ESP32 executes on next heartbeat!
-        await this.gatewayService.requestCapture(gateway.id);
-        this.logger.log(`Queued automatic image capture request for Gateway ${gateway.id}`);
+        // Only queue post-session capture if no baseline observation was provided during 5s pre-session
+        if (!payload.hasBaselineObservation) {
+          await this.gatewayService.requestCapture(gateway.id);
+          this.logger.log(`Queued automatic image capture request for Gateway ${gateway.id}`);
+        } else {
+          this.logger.log(`Session ${payload.sessionId} already has baseline observation. Skipping post-start capture.`);
+        }
       } else {
         this.logger.warn(`No gateway node found to bind session ${payload.sessionId}`);
       }

@@ -5,6 +5,7 @@
 #include "camera_manager.h"
 #include "led_status.h"
 #include "ble_manager.h"
+#include <esp_task_wdt.h>
 
 // Global Manager Instances
 WifiManager    g_wifiManager;
@@ -16,8 +17,8 @@ LedStatus      g_ledStatus;
 unsigned long g_lastHeartbeatTime = 0;
 unsigned long g_lastObservationTime = 0;
 
-void executeCaptureAndUpload() {
-    Serial.println("[CAPTURE] Executing image capture request...");
+void executeCaptureAndUpload(int frameCount = 3) {
+    Serial.printf("[CAPTURE] Executing burst capture request (%d frames)...\n", frameCount);
     g_ledStatus.triggerFlash(100);
 
     if (!g_cameraManager.isInitialized()) {
@@ -25,24 +26,29 @@ void executeCaptureAndUpload() {
         return;
     }
 
-    camera_fb_t* fb = g_cameraManager.capture();
-    if (fb != nullptr) {
-        Serial.printf("[CAMERA] Frame captured successfully! Size: %u bytes (%dx%d)\n", fb->len, fb->width, fb->height);
-        
-        bool uploadSuccess = g_gatewayClient.sendImageObservation("PERSON_COUNT", fb, nullptr, GATEWAY_ID);
-        if (uploadSuccess) {
-            Serial.println("[UPLOAD] Image observation uploaded successfully!");
+    for (int i = 0; i < frameCount; i++) {
+        esp_task_wdt_reset();
+        camera_fb_t* fb = g_cameraManager.capture();
+        if (fb != nullptr) {
+            Serial.printf("[CAMERA] Frame %d/%d captured! Size: %u bytes (%dx%d)\n", i + 1, frameCount, fb->len, fb->width, fb->height);
+            
+            bool uploadSuccess = g_gatewayClient.sendImageObservation("PERSON_COUNT", fb, nullptr, GATEWAY_ID);
+            if (uploadSuccess) {
+                Serial.printf("[UPLOAD] Frame %d/%d uploaded successfully!\n", i + 1, frameCount);
+            } else {
+                Serial.printf("[UPLOAD] Frame %d/%d failed to upload!\n", i + 1, frameCount);
+            }
+
+            g_cameraManager.release(fb);
         } else {
-            Serial.println("[UPLOAD] Failed to upload image observation!");
+            Serial.println("[CAMERA] Error: Camera capture returned null frame!");
         }
 
-        g_cameraManager.release(fb);
-    } else {
-        Serial.println("[CAMERA] Error: Camera capture returned null frame!");
+        if (i < frameCount - 1) {
+            delay(250); // 250ms spacing between burst frames
+        }
     }
 }
-
-#include <esp_task_wdt.h>
 
 void setup() {
     Serial.begin(115200);
