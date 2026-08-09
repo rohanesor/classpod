@@ -4,7 +4,7 @@
 GatewayClient::GatewayClient() {}
 
 void GatewayClient::begin(const char* host, uint16_t port, const char* secret) {
-    m_baseUrl = "http://" + String(host) + ":" + String(port) + "/gateway";
+    m_baseUrl = "http://" + String(host) + ":" + String(port) + "/api/gateway";
     m_secret = secret;
     Serial.printf("[BOOT] GatewayClient initialized. Target API: %s\n", m_baseUrl.c_str());
 }
