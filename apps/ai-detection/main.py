@@ -4,7 +4,7 @@ import time
 from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageEnhance
 from ultralytics import YOLO
 
 app = FastAPI(title="ClassPod AI Detection Service")
@@ -54,8 +54,8 @@ async def detect_persons(request: DetectionRequest):
         raise HTTPException(status_code=400, detail=f"Invalid image format or decoding failed: {str(e)}")
         
     try:
-        # Pass 1: Standard inference with lowered confidence threshold for ESP32-CAM (0.15)
-        results = model.predict(img, conf=0.15, verbose=False)
+        # Pass 1: Standard inference with lowered confidence threshold for ESP32-CAM (0.12)
+        results = model.predict(img, conf=0.12, imgsz=640, verbose=False)
         
         person_detections = []
         conf_sum = 0.0
@@ -77,23 +77,38 @@ async def detect_persons(request: DetectionRequest):
                     ))
                     conf_sum += conf
 
-        # Pass 2: If 0 persons detected (common in dark/backlit classrooms), apply auto-contrast enhancement
-        if len(person_detections) == 0:
-            enhanced_img = ImageOps.autocontrast(img)
-            results_enhanced = model.predict(enhanced_img, conf=0.10, verbose=False)
+        # Pass 2: Low-Light Shadow & Contrast Amplification
+        # If fewer than 2 persons detected or low confidence, apply multi-stage enhancement (Equalization + Brightness Boost)
+        if len(person_detections) < 2:
+            # Boost brightness & equalize dark histograms
+            equalized_img = ImageOps.equalize(img)
+            brightener = ImageEnhance.Brightness(equalized_img)
+            boosted_img = brightener.enhance(1.4)
+            contraster = ImageEnhance.Contrast(boosted_img)
+            enhanced_img = contraster.enhance(1.3)
+
+            results_enhanced = model.predict(enhanced_img, conf=0.08, imgsz=640, verbose=False)
             if len(results_enhanced) > 0:
                 result = results_enhanced[0]
                 boxes = result.boxes
+                
+                enhanced_detections = []
+                enhanced_conf_sum = 0.0
                 for box in boxes:
                     cls_id = int(box.cls[0].item())
                     if cls_id == 0:
                         conf = float(box.conf[0].item())
                         xyxy = box.xyxy[0].tolist()
-                        person_detections.append(DetectionInfo(
+                        enhanced_detections.append(DetectionInfo(
                             box=xyxy,
                             confidence=conf
                         ))
-                        conf_sum += conf
+                        enhanced_conf_sum += conf
+                
+                # If enhanced image found more valid persons, adopt the enhanced detections
+                if len(enhanced_detections) > len(person_detections):
+                    person_detections = enhanced_detections
+                    conf_sum = enhanced_conf_sum
         
         person_count = len(person_detections)
         avg_confidence = (conf_sum / person_count) if person_count > 0 else 0.0

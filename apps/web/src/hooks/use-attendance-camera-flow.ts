@@ -75,45 +75,46 @@ export function useAttendanceCameraFlow({
         if (obsRes.data && obsRes.data.length > 0) {
           const latest = obsRes.data[0];
           const payload = latest?.payload || {};
-          const isFresh = latest.createdAt && (now - new Date(latest.createdAt).getTime()) < 10000;
+          const isFresh = latest.createdAt && (now - new Date(latest.createdAt).getTime()) < 15000;
           if (isFresh && typeof payload.personCount === 'number') {
             return {
               frameIndex: frameIdx,
               timestamp: now,
               personCount: payload.personCount,
-              confidence: payload.confidence ?? 0.96,
+              confidence: payload.confidence !== undefined && payload.confidence !== null
+                ? (payload.confidence > 1 ? payload.confidence / 100 : payload.confidence)
+                : 0.95,
               detections: payload.detections,
               image: payload.imageUrl || payload.image,
             };
           }
         }
       } catch {
-        // Fallback to local frame stream
+        // Handled below
       }
 
-      // Live frame variation around the expected count
-      const rand = Math.random();
-      let count = expected;
-      let conf = 0.94 + Math.random() * 0.04;
-
-      if (rand < 0.70) {
-        count = expected;
-      } else if (rand < 0.90) {
-        count = Math.max(1, expected + (Math.random() > 0.5 ? 1 : -1));
-        conf = 0.88 + Math.random() * 0.06;
-      } else {
-        count = Math.max(1, expected - 2);
-        conf = 0.82 + Math.random() * 0.08;
+      // If hardware observation hasn't arrived yet, carry forward the last captured real frame
+      // or return a pending placeholder with count 0 (never fabricating fake 32 counts)
+      const lastKnown = framesBufferRef.current[framesBufferRef.current.length - 1];
+      if (lastKnown) {
+        return {
+          frameIndex: frameIdx,
+          timestamp: now,
+          personCount: lastKnown.personCount,
+          confidence: lastKnown.confidence,
+          image: lastKnown.image,
+          detections: lastKnown.detections,
+        };
       }
 
       return {
         frameIndex: frameIdx,
         timestamp: now,
-        personCount: count,
-        confidence: Number(conf.toFixed(3)),
+        personCount: 0,
+        confidence: 0,
       };
     },
-    [expectedStudentsCount],
+    [],
   );
 
   /**

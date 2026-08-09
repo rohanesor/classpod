@@ -27,13 +27,13 @@ bool CameraManager::begin() {
 
     // Use PSRAM if available
     if (psramFound()) {
-        config.frame_size = FRAMESIZE_QVGA; // 320x240
-        config.jpeg_quality = 12;
+        config.frame_size = FRAMESIZE_VGA;  // 640x480 for sharp human feature detection
+        config.jpeg_quality = 10;           // High quality JPEG (0-63, lower is better)
         config.fb_count = 2;
         config.grab_mode = CAMERA_GRAB_LATEST;
     } else {
-        config.frame_size = FRAMESIZE_QQVGA; // 160x120
-        config.jpeg_quality = 15;
+        config.frame_size = FRAMESIZE_QVGA; // 320x240 fallback
+        config.jpeg_quality = 12;
         config.fb_count = 1;
         config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
     }
@@ -50,9 +50,25 @@ bool CameraManager::begin() {
         // AI Thinker camera sensor orientation defaults
         s->set_vflip(s, 1);
         s->set_hmirror(s, 0);
+
+        // Low-light and indoor classroom image optimization
+        s->set_brightness(s, 1);                  // Brightness (+1) for indoor ambient light
+        s->set_contrast(s, 1);                    // Contrast (+1) for sharp subject edge definition
+        s->set_saturation(s, 0);                  // Natural color saturation
+        s->set_gainceiling(s, GAINCEILING_8X);    // 8x sensor gain ceiling for dark/backlit rooms
+        s->set_colorbar(s, 0);                    // Disable test color bar
+        s->set_whitebal(s, 1);                    // Enable Auto White Balance (AWB)
+        s->set_gain_ctrl(s, 1);                   // Enable Auto Gain Control (AGC)
+        s->set_exposure_ctrl(s, 1);               // Enable Auto Exposure Control (AEC)
+        s->set_aec2(s, 1);                        // Enable Night DSP Auto Exposure algorithm
+        s->set_ae_level(s, 1);                    // Auto-exposure target level (+1)
+        s->set_bpc(s, 1);                         // Black Pixel Correction
+        s->set_wpc(s, 1);                         // White Pixel Correction
+        s->set_lenc(s, 1);                        // Lens Correction (corrects corner vignetting)
+        s->set_raw_gma(s, 1);                     // Raw Gamma correction
     }
 
-    Serial.println("[CameraManager] Camera initialized successfully!");
+    Serial.println("[CameraManager] OV2640 Camera initialized with VGA & Low-Light DSP Tuning!");
     m_initialized = true;
     return true;
 }
