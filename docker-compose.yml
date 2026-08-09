@@ -14,6 +14,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
@@ -27,6 +28,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 5s
 
   ai-detection:
     build:
@@ -38,7 +40,8 @@ services:
       test: ['CMD', 'curl', '-f', 'http://localhost:5000/health']
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+      start_period: 20s
 
   api:
     build:
@@ -69,8 +72,9 @@ services:
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:4000/health']
       interval: 5s
-      timeout: 3s
-      retries: 5
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   worker:
     build:
@@ -107,7 +111,8 @@ services:
       test: ['CMD', 'curl', '-f', 'http://localhost:80/health']
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+      start_period: 10s
 
 volumes:
   postgres-data:
