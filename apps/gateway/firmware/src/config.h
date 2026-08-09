@@ -4,30 +4,30 @@
 #include <Arduino.h>
 
 // ==========================================
-// WiFi Settings (Provide via build flags in platformio.ini or NVS)
+// WiFi Settings (Provide via build flags in platformio.ini or set below)
 // ==========================================
 #ifndef WIFI_SSID
-#define WIFI_SSID "ClassPod_AP"
+#define WIFI_SSID "YOUR_WIFI_SSID"      // Replace with your WiFi SSID Name
 #endif
 
 #ifndef WIFI_PASSWORD
-#define WIFI_PASSWORD ""
+#define WIFI_PASSWORD "YOUR_WIFI_PASS"  // Replace with your WiFi Password
 #endif
 
 // ==========================================
-// Backend API Configuration
+// Backend API Configuration (EC2 Target)
 // ==========================================
 #ifndef API_HOST
-#define API_HOST "api.classpod.io"
+#define API_HOST "13.211.174.183"       // ClassPod EC2 Public IP
 #endif
 
 #ifndef API_PORT
-#define API_PORT 443
+#define API_PORT 80                     // EC2 Nginx Reverse Proxy Port
 #endif
 
 // Secret matching GATEWAY_SHARED_SECRET in backend .env
 #ifndef GATEWAY_SECRET
-#define GATEWAY_SECRET ""
+#define GATEWAY_SECRET "local-dev-secret-key"
 #endif
 
 // Unique identifier for this gateway node in the database
