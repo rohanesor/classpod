@@ -585,4 +585,109 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       decisions,
     };
   }
+
+  /**
+   * Returns all active and past attendance sessions for a teacher.
+   */
+  async findAllForTeacher(teacherId: string, podId?: string) {
+    const whereClause: any = { teacherId };
+    if (podId) {
+      whereClause.podId = podId;
+    }
+
+    const sessions = await this.prisma.attendanceSession.findMany({
+      where: whereClause,
+      include: {
+        pod: {
+          select: {
+            id: true,
+            name: true,
+            subjectCode: true,
+          },
+        },
+        decisions: {
+          select: {
+            id: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: { startedAt: 'desc' },
+      take: 50,
+    });
+
+    return sessions.map((sess) => {
+      const totalEnrolled = sess.decisions.length;
+      const checkedIn = sess.decisions.filter((d) => d.status === AttendanceDecisionStatus.CHECKED_IN).length;
+      const verified = sess.decisions.filter((d) => d.status === AttendanceDecisionStatus.VERIFIED).length;
+      const pending = sess.decisions.filter((d) => d.status === AttendanceDecisionStatus.PENDING).length;
+      const absent = sess.decisions.filter(
+        (d) => d.status === AttendanceDecisionStatus.EXPIRED || d.status === AttendanceDecisionStatus.REJECTED
+      ).length;
+
+      return {
+        id: sess.id,
+        podId: sess.podId,
+        podName: sess.pod?.name || 'Classroom',
+        subjectCode: sess.pod?.subjectCode || '',
+        teacherName: 'Teacher',
+        status: sess.status,
+        duration: sess.duration,
+        startedAt: sess.startedAt,
+        expiresAt: sess.expiresAt,
+        endedAt: sess.endedAt,
+        metrics: {
+          totalEnrolled,
+          checkedIn,
+          verified,
+          pending,
+          absent,
+        },
+      };
+    });
+  }
+
+  /**
+   * Returns all active and past attendance records for a student.
+   */
+  async findAllForStudent(studentId: string) {
+    const decisions = await this.prisma.attendanceDecision.findMany({
+      where: { studentId },
+      include: {
+        session: {
+          include: {
+            pod: {
+              select: {
+                id: true,
+                name: true,
+                subjectCode: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { requestedAt: 'desc' },
+      take: 50,
+    });
+
+    return decisions.map((dec: any) => ({
+      id: dec.session.id,
+      podId: dec.session.podId,
+      podName: dec.session.pod?.name || 'Classroom',
+      subjectCode: dec.session.pod?.subjectCode || '',
+      teacherName: 'Teacher',
+      status: dec.session.status,
+      duration: dec.session.duration,
+      startedAt: dec.session.startedAt,
+      expiresAt: dec.session.expiresAt,
+      endedAt: dec.session.endedAt,
+      studentDecision: {
+        id: dec.id,
+        status: dec.status,
+        explanation: dec.explanation,
+        requestedAt: dec.requestedAt,
+        respondedAt: dec.respondedAt,
+      },
+    }));
+  }
 }

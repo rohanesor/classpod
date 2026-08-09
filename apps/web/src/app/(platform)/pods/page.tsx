@@ -1664,7 +1664,7 @@ export default function PodsPage() {
                         <Button
                           type="button"
                           size="sm"
-                          variant="outline"
+                          variant="secondary"
                           onClick={async () => {
                             try {
                               await apiClient.post('/gateway/esp32-cam-node-1/simulate-observation', {

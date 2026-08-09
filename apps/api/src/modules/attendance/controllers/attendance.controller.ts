@@ -68,6 +68,16 @@ export class AttendanceController {
     return this.wrapResponse(data);
   }
 
+  @Get('sessions')
+  @UseGuards(JwtAuthGuard)
+  async findAll(@CurrentUser() user: User) {
+    const data =
+      user.role === UserRole.TEACHER
+        ? await this.attendanceService.findAllForTeacher(user.id)
+        : await this.attendanceService.findAllForStudent(user.id);
+    return this.wrapResponse(data);
+  }
+
   @Get('session/:id/live')
   @UseGuards(JwtAuthGuard)
   async findLive(@CurrentUser() user: User, @Param('id') id: string) {

@@ -125,37 +125,12 @@ function AttendancePageBody({
   // Let's check what other endpoints are in the attendance module controller.
   const loadSessions = useCallback(async () => {
     try {
-      if (isTeacher) {
-        // Teachers query logs/active-sessions
-        const res = await apiClient.get<any[]>('/logs/active-sessions');
-        setSessions(res.data || []);
-      } else {
-        // Students can look up their active session or check recent decisions
-        const res = await apiClient.get<any>('/attendance/active');
-        if (res.data) {
-          const sess = res.data;
-          setSessions([
-            {
-              id: sess.id,
-              podId: sess.podId,
-              podName: sess.pod?.name || 'Classroom',
-              teacherName: 'Teacher',
-              status: sess.status,
-              duration: sess.duration,
-              startedAt: sess.startedAt,
-              expiresAt: sess.expiresAt,
-              endedAt: sess.endedAt,
-              studentDecision: sess.decision,
-            },
-          ]);
-        } else {
-          setSessions([]);
-        }
-      }
+      const res = await apiClient.get<any[]>('/attendance/sessions');
+      setSessions(res.data || []);
     } catch (err) {
       window.console.error('Failed to load sessions:', err);
     }
-  }, [isTeacher, setSessions]);
+  }, [setSessions]);
 
   useEffect(() => {
     fetchAttendanceData();
