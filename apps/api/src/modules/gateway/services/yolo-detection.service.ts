@@ -1,10 +1,22 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { IPersonDetector } from '../interfaces/person-detection.interface';
 
 @Injectable()
 export class YoloDetectionService implements IPersonDetector {
   private readonly logger = new Logger(YoloDetectionService.name);
-  private readonly aiServiceUrl = 'http://127.0.0.1:5000/detect';
+  private readonly aiServiceUrl: string;
+
+  constructor(private readonly configService: ConfigService) {
+    const rawUrl =
+      this.configService.get<string>('AI_DETECTION_SERVICE_URL') ||
+      process.env.AI_DETECTION_SERVICE_URL ||
+      'http://ai-detection:5000';
+
+    const cleanUrl = rawUrl.replace(/\/+$/, '');
+    this.aiServiceUrl = cleanUrl.endsWith('/detect') ? cleanUrl : `${cleanUrl}/detect`;
+    this.logger.log(`YoloDetectionService initialized with target URL: ${this.aiServiceUrl}`);
+  }
 
   async detect(
     imagePayload: string,
@@ -14,7 +26,7 @@ export class YoloDetectionService implements IPersonDetector {
     const startTime = Date.now();
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3-second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout for YOLO inference
 
       const response = await fetch(this.aiServiceUrl, {
         method: 'POST',
