@@ -17,3 +17,5 @@ __pycache__/
 *.log
 Dockerfile.local
 apps/gateway/firmware/.pio/
+firstmate/
+
