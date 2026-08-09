@@ -721,7 +721,13 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
           personCount: payload.personCount,
           expectedCount: payload.expectedCount || totalEnrolled,
           difference: payload.difference !== undefined ? payload.difference : (payload.personCount - totalEnrolled),
-          confidence: payload.confidence ? Math.round(payload.confidence * 100) : 96,
+          confidence: payload.confidence !== undefined && payload.confidence !== null
+            ? (payload.confidence > 100
+                ? Math.min(100, Math.round(payload.confidence / 100))
+                : payload.confidence > 1
+                ? Math.min(100, Math.round(payload.confidence))
+                : Math.round(payload.confidence * 100))
+            : 96,
           capturedTime: obs.createdAt,
           image: payload.image || null,
           status: 'Analysis Complete',

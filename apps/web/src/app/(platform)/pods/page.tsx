@@ -2038,8 +2038,12 @@ export default function PodsPage() {
                       <p className="text-2xl font-extrabold text-emerald-400">
                         {attendanceSession.gatewayStatus?.cameraStatus === 'AI Offline'
                           ? '--'
-                          : attendanceSession.latestAiObservation?.confidence !== undefined
-                          ? `${attendanceSession.latestAiObservation.confidence}%`
+                          : attendanceSession.latestAiObservation?.confidence !== undefined && attendanceSession.latestAiObservation?.confidence !== null
+                          ? (() => {
+                              const c = attendanceSession.latestAiObservation.confidence;
+                              const norm = c > 100 ? Math.round(c / 100) : c > 1 ? Math.round(c) : Math.round(c * 100);
+                              return `${Math.min(100, Math.max(0, norm))}%`;
+                            })()
                           : '--'}
                       </p>
                     </div>
