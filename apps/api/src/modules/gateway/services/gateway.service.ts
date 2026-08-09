@@ -153,13 +153,29 @@ export class GatewayService {
   > {
     const now = new Date();
 
-    // Check if gateway exists
-    const existing = await this.prisma.gateway.findUnique({
+    // Check if gateway exists; if not, auto-register on first heartbeat
+    let existing = await this.prisma.gateway.findUnique({
       where: { id: dto.gatewayId },
     });
 
     if (!existing) {
-      throw new NotFoundException(`Gateway with ID ${dto.gatewayId} not found`);
+      existing = await this.prisma.gateway.create({
+        data: {
+          id: dto.gatewayId,
+          name: `ESP32 Gateway Node (${dto.gatewayId})`,
+          location: 'Main Classroom',
+          status: GatewayNodeStatus.ONLINE,
+          lastHeartbeat: now,
+          firmwareVersion: dto.firmwareVersion ?? 'v1.0.0',
+        },
+      });
+
+      this.eventLogger.audit('gateway.auto_registered', {
+        entityType: 'Gateway',
+        entityId: dto.gatewayId,
+        gatewayId: dto.gatewayId,
+        firmwareVersion: dto.firmwareVersion ?? 'v1.0.0',
+      });
     }
 
     const wasOffline = existing.status === GatewayNodeStatus.OFFLINE;
@@ -331,12 +347,21 @@ export class GatewayService {
    * Automatically attaches activeSessionId and runs PersonDetectionService if image observation.
    */
   async submitObservation(dto: SubmitObservationDto): Promise<GatewayObservation> {
-    // Validate gateway exists
-    const gateway = await this.prisma.gateway.findUnique({
+    // Validate gateway exists; auto-register if missing
+    let gateway = await this.prisma.gateway.findUnique({
       where: { id: dto.gatewayId },
     });
     if (!gateway) {
-      throw new NotFoundException(`Gateway with ID ${dto.gatewayId} not found`);
+      gateway = await this.prisma.gateway.create({
+        data: {
+          id: dto.gatewayId,
+          name: `ESP32 Gateway Node (${dto.gatewayId})`,
+          location: 'Main Classroom',
+          status: GatewayNodeStatus.ONLINE,
+          lastHeartbeat: new Date(),
+          firmwareVersion: 'v1.0.0',
+        },
+      });
     }
 
     // Auto-resolve sessionId if missing
