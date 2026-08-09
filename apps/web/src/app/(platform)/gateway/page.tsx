@@ -407,47 +407,68 @@ export default function GatewayPage() {
                         <span className="text-[10px] text-muted-foreground">Manual Hardware Override</span>
                       </div>
 
-                      <Button
-                        size="sm"
-                        onClick={(e) => handleCaptureTest(gw.id, e)}
-                        disabled={stage !== 'IDLE'}
-                        className={`w-full h-9 text-xs font-bold transition-all ${
-                          stage === 'SUCCESS'
-                            ? 'bg-emerald-600 hover:bg-emerald-600 text-white'
-                            : stage === 'CAPTURING'
-                              ? 'bg-yellow-600 hover:bg-yellow-600 text-white'
-                              : stage === 'UPLOADING' || stage === 'PROCESSING'
-                                ? 'bg-blue-600 hover:bg-blue-600 text-white'
-                                : 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-md'
-                        }`}
-                      >
-                        {stage === 'CAPTURING' ? (
-                          <>
-                            <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                            <span>Capturing...</span>
-                          </>
-                        ) : stage === 'UPLOADING' ? (
-                          <>
-                            <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                            <span>Uploading...</span>
-                          </>
-                        ) : stage === 'PROCESSING' ? (
-                          <>
-                            <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                            <span>Processing...</span>
-                          </>
-                        ) : stage === 'SUCCESS' ? (
-                          <>
-                            <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
-                            <span>Image Updated</span>
-                          </>
-                        ) : (
-                          <>
-                            <Camera className="h-3.5 w-3.5 mr-1.5" />
-                            <span>Manual Capture Test</span>
-                          </>
-                        )}
-                      </Button>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              await apiClient.post(`/gateway/${gw.id}/toggle-status`, {
+                                status: gw.status === 'ONLINE' ? 'OFFLINE' : 'ONLINE',
+                              });
+                              fetchGateways();
+                            } catch (err) {
+                              window.console.error('Toggle status error:', err);
+                            }
+                          }}
+                          className="h-9 text-xs font-semibold"
+                        >
+                          {gw.status === 'ONLINE' ? '🔴 Mark Offline' : '🟢 Mark Online'}
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          onClick={(e) => handleCaptureTest(gw.id, e)}
+                          disabled={stage !== 'IDLE'}
+                          className={`h-9 text-xs font-bold transition-all ${
+                            stage === 'SUCCESS'
+                              ? 'bg-emerald-600 hover:bg-emerald-600 text-white'
+                              : stage === 'CAPTURING'
+                                ? 'bg-yellow-600 hover:bg-yellow-600 text-white'
+                                : stage === 'UPLOADING' || stage === 'PROCESSING'
+                                  ? 'bg-blue-600 hover:bg-blue-600 text-white'
+                                  : 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-md'
+                          }`}
+                        >
+                          {stage === 'CAPTURING' ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                              <span>Capturing...</span>
+                            </>
+                          ) : stage === 'UPLOADING' ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                              <span>Uploading...</span>
+                            </>
+                          ) : stage === 'PROCESSING' ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                              <span>Processing...</span>
+                            </>
+                          ) : stage === 'SUCCESS' ? (
+                            <>
+                              <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                              <span>Image Updated</span>
+                            </>
+                          ) : (
+                            <>
+                              <Camera className="h-3.5 w-3.5 mr-1.5" />
+                              <span>Manual Capture Test</span>
+                            </>
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   )}
 

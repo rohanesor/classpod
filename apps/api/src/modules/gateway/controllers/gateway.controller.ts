@@ -156,4 +156,19 @@ export class GatewayController {
       },
     };
   }
+
+  @Post(':id/toggle-status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  async toggleStatus(@Param('id') id: string, @Body() body: any): Promise<ApiEnvelope<any>> {
+    const data = await this.gatewayService.toggleStatus(id, body?.status);
+    const ctx = this.requestContext.getContext();
+    return {
+      data,
+      meta: {
+        requestId: ctx?.requestId ?? '',
+        correlationId: ctx?.correlationId ?? '',
+      },
+    };
+  }
 }

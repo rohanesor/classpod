@@ -7,7 +7,7 @@ import { SubmitObservationDto } from '../dtos/submit-observation.dto';
 import { GATEWAY_EVENT_NAMES, GATEWAY_AUDIT_ACTIONS } from '../constants/gateway-events';
 import { IPersonDetector } from '../interfaces/person-detection.interface';
 
-const OFFLINE_THRESHOLD_MS = 90_000; // 90 seconds
+const OFFLINE_THRESHOLD_MS = 25_000; // 25 seconds threshold for rapid offline status detection
 
 export interface ActiveSessionBinding {
   sessionId: string;
@@ -534,5 +534,34 @@ export class GatewayService {
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
+  }
+
+  /**
+   * Manually toggle status of gateway (for demo / testing purposes).
+   */
+  async toggleStatus(gatewayId: string, targetStatus?: GatewayNodeStatus): Promise<Gateway> {
+    const existing = await this.prisma.gateway.findUnique({
+      where: { id: gatewayId },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Gateway with ID ${gatewayId} not found`);
+    }
+
+    const newStatus = targetStatus ?? (existing.status === GatewayNodeStatus.ONLINE ? GatewayNodeStatus.OFFLINE : GatewayNodeStatus.ONLINE);
+    const updated = await this.prisma.gateway.update({
+      where: { id: gatewayId },
+      data: {
+        status: newStatus,
+        lastHeartbeat: newStatus === GatewayNodeStatus.ONLINE ? new Date() : new Date(Date.now() - 30_000),
+      },
+    });
+
+    this.eventLogger.audit('gateway.status_toggled', {
+      entityType: 'Gateway',
+      entityId: gatewayId,
+      status: newStatus,
+    });
+
+    return updated;
   }
 }
