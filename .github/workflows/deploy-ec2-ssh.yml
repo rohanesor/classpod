@@ -9,7 +9,7 @@ jobs:
   deploy:
     name: Deploy to AWS EC2 Ubuntu 24.04
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && secrets.EC2_HOST != ''
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

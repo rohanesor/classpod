@@ -13,7 +13,7 @@ jobs:
   deploy-aws:
     name: Build, ECR Push & ECS Deploy
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && secrets.AWS_IAM_ROLE_ARN != ''
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
