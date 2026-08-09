@@ -4,7 +4,7 @@ import time
 from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from PIL import Image
+from PIL import Image, ImageOps
 from ultralytics import YOLO
 
 app = FastAPI(title="ClassPod AI Detection Service")
@@ -48,14 +48,14 @@ async def detect_persons(request: DetectionRequest):
             
         # Decode base64 bytes
         img_bytes = base64.b64decode(base64_str)
-        img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        raw_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        img = ImageOps.exif_transpose(raw_img)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image format or decoding failed: {str(e)}")
         
     try:
-        # Run inference using YOLO11n
-        # verbose=False suppresses CLI logging during fast predictions
-        results = model.predict(img, verbose=False)
+        # Pass 1: Standard inference with lowered confidence threshold for ESP32-CAM (0.15)
+        results = model.predict(img, conf=0.15, verbose=False)
         
         person_detections = []
         conf_sum = 0.0
@@ -69,7 +69,6 @@ async def detect_persons(request: DetectionRequest):
                 # Class 0 in COCO dataset is "person"
                 if cls_id == 0:
                     conf = float(box.conf[0].item())
-                    # Convert bounding box to [x1, y1, x2, y2]
                     xyxy = box.xyxy[0].tolist()
                     
                     person_detections.append(DetectionInfo(
@@ -77,7 +76,25 @@ async def detect_persons(request: DetectionRequest):
                         confidence=conf
                     ))
                     conf_sum += conf
-                    
+
+        # Pass 2: If 0 persons detected (common in dark/backlit classrooms), apply auto-contrast enhancement
+        if len(person_detections) == 0:
+            enhanced_img = ImageOps.autocontrast(img)
+            results_enhanced = model.predict(enhanced_img, conf=0.10, verbose=False)
+            if len(results_enhanced) > 0:
+                result = results_enhanced[0]
+                boxes = result.boxes
+                for box in boxes:
+                    cls_id = int(box.cls[0].item())
+                    if cls_id == 0:
+                        conf = float(box.conf[0].item())
+                        xyxy = box.xyxy[0].tolist()
+                        person_detections.append(DetectionInfo(
+                            box=xyxy,
+                            confidence=conf
+                        ))
+                        conf_sum += conf
+        
         person_count = len(person_detections)
         avg_confidence = (conf_sum / person_count) if person_count > 0 else 0.0
         
