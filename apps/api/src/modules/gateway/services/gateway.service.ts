@@ -163,7 +163,7 @@ export class GatewayService {
         data: {
           id: dto.gatewayId,
           name: `ESP32 Gateway Node (${dto.gatewayId})`,
-          location: 'Main Classroom',
+          classroom: 'Main Classroom',
           status: GatewayNodeStatus.ONLINE,
           lastHeartbeat: now,
           firmwareVersion: dto.firmwareVersion ?? 'v1.0.0',
@@ -356,7 +356,7 @@ export class GatewayService {
         data: {
           id: dto.gatewayId,
           name: `ESP32 Gateway Node (${dto.gatewayId})`,
-          location: 'Main Classroom',
+          classroom: 'Main Classroom',
           status: GatewayNodeStatus.ONLINE,
           lastHeartbeat: new Date(),
           firmwareVersion: 'v1.0.0',
