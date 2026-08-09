@@ -9,12 +9,27 @@ jobs:
   deploy:
     name: Deploy to AWS EC2 Ubuntu 24.04
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && secrets.EC2_HOST != ''
+    if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Verify EC2 Secrets Configuration
+        id: check-secrets
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          if [ -z "$EC2_HOST" ] || [ -z "$EC2_SSH_KEY" ]; then
+            echo "configured=false" >> $GITHUB_OUTPUT
+            echo "EC2_HOST or EC2_SSH_KEY secret is not configured in GitHub repository. Skipping SSH auto-deploy."
+          else
+            echo "configured=true" >> $GITHUB_OUTPUT
+            echo "EC2 secrets configured. Proceeding with SSH deployment."
+          fi
+
       - name: Deploy to EC2 via SSH
+        if: steps.check-secrets.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -27,3 +42,4 @@ jobs:
             docker compose up -d --build
             docker exec classpod-api npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
             docker compose ps
+

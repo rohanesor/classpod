@@ -13,25 +13,43 @@ jobs:
   deploy-aws:
     name: Build, ECR Push & ECS Deploy
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && secrets.AWS_IAM_ROLE_ARN != ''
+    if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Check AWS Secrets Configuration
+        id: check-secrets
+        env:
+          AWS_IAM_ROLE_ARN: ${{ secrets.AWS_IAM_ROLE_ARN }}
+        run: |
+          if [ -z "$AWS_IAM_ROLE_ARN" ]; then
+            echo "configured=false" >> $GITHUB_OUTPUT
+            echo "AWS_IAM_ROLE_ARN secret not configured. Skipping ECS deployment."
+          else
+            echo "configured=true" >> $GITHUB_OUTPUT
+            echo "AWS_IAM_ROLE_ARN configured. Proceeding with ECS deployment."
+          fi
+
       - name: Configure AWS Credentials (OIDC Role)
+        if: steps.check-secrets.outputs.configured == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Log in to Amazon ECR
+        if: steps.check-secrets.outputs.configured == 'true'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+
       - name: Setup Docker Buildx
+        if: steps.check-secrets.outputs.configured == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build & Push API Image to ECR
+        if: steps.check-secrets.outputs.configured == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -42,6 +60,7 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/classpod-api:${{ github.sha }}
 
       - name: Build & Push Worker Image to ECR
+        if: steps.check-secrets.outputs.configured == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -52,6 +71,7 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/classpod-worker:${{ github.sha }}
 
       - name: Build & Push AI Detection Image to ECR
+        if: steps.check-secrets.outputs.configured == 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./apps/ai-detection
@@ -62,12 +82,14 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/classpod-ai-detection:${{ github.sha }}
 
       - name: Execute Prisma Database Migrations
+        if: steps.check-secrets.outputs.configured == 'true'
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
         run: |
           npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
 
       - name: Deploy API Service to AWS ECS
+        if: steps.check-secrets.outputs.configured == 'true'
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: infra/aws/ecs.tf
