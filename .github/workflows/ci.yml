@@ -173,7 +173,7 @@ jobs:
       - name: Build AI Detection Container Image
         uses: docker/build-push-action@v5
         with:
-          context: ./apps/ai-detection
+          context: .
           file: apps/ai-detection/Dockerfile
           push: false
           tags: classpod-ai-detection:latest
