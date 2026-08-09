@@ -227,9 +227,27 @@ export function useAttendanceCameraFlow({
         }
       } catch (err: any) {
         if (!isCancelledRef.current) {
+          const msg = err?.message || 'Failed to start attendance session on server.';
+          
+          // Auto-recover existing active session if one was already running
+          if (msg.includes('already an active attendance session')) {
+            try {
+              const activeRes = await apiClient.get<any>(`/attendance/pod/${podId}/active`);
+              if (activeRes.data) {
+                setAnalysisState('ATTENDANCE_90S');
+                setIsProcessing(false);
+                if (onSessionStarted) {
+                  onSessionStarted(activeRes.data);
+                }
+                return;
+              }
+            } catch (recoveryErr) {
+              window.console.error('Failed to recover active session:', recoveryErr);
+            }
+          }
+
           setAnalysisState('ERROR');
           setIsProcessing(false);
-          const msg = err?.message || 'Failed to start attendance session on server.';
           setErrorMessage(msg);
           if (onError) onError(msg);
         }
@@ -238,9 +256,9 @@ export function useAttendanceCameraFlow({
   }, [acquireFrame, cleanupTimers, durationSeconds, expectedStudentsCount, onError, onSessionStarted, podId]);
 
   /**
-   * Resets the camera analysis state back to IDLE.
+   * Aborts the camera analysis window immediately and resets to IDLE.
    */
-  const resetAnalysis = useCallback(() => {
+  const abortCapture = useCallback(() => {
     isCancelledRef.current = true;
     cleanupTimers();
     setAnalysisState('IDLE');
@@ -252,6 +270,38 @@ export function useAttendanceCameraFlow({
     framesBufferRef.current = [];
   }, [cleanupTimers]);
 
+  /**
+   * Skips remaining camera capture and starts attendance session immediately.
+   */
+  const skipToSession = useCallback(async () => {
+    abortCapture();
+    setIsProcessing(true);
+    try {
+      const response = await apiClient.post<any>('/attendance/start', {
+        podId,
+        duration: durationSeconds,
+      });
+      setAnalysisState('ATTENDANCE_90S');
+      setIsProcessing(false);
+      if (onSessionStarted && response.data) {
+        onSessionStarted(response.data);
+      }
+    } catch (err: any) {
+      setIsProcessing(false);
+      const msg = err?.message || 'Failed to start attendance session.';
+      setErrorMessage(msg);
+      setAnalysisState('ERROR');
+      if (onError) onError(msg);
+    }
+  }, [abortCapture, durationSeconds, onError, onSessionStarted, podId]);
+
+  /**
+   * Resets the camera analysis state back to IDLE.
+   */
+  const resetAnalysis = useCallback(() => {
+    abortCapture();
+  }, [abortCapture]);
+
   return {
     analysisState,
     capturedFrames,
@@ -260,6 +310,8 @@ export function useAttendanceCameraFlow({
     errorMessage,
     isProcessing,
     startCameraAnalysis,
+    abortCapture,
+    skipToSession,
     resetAnalysis,
   };
 }

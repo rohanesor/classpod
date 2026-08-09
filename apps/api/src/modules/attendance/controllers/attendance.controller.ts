@@ -10,6 +10,8 @@ import { AttendanceService } from '../services/attendance.service';
 import { StartSessionDto } from '../dtos/start-session.dto';
 import { CheckinDto } from '../dtos/checkin.dto';
 import { EndSessionDto } from '../dtos/end-session.dto';
+import { CancelSessionDto } from '../dtos/cancel-session.dto';
+import { ExtendSessionDto } from '../dtos/extend-session.dto';
 
 @Controller('attendance')
 export class AttendanceController {
@@ -37,6 +39,14 @@ export class AttendanceController {
     return this.wrapResponse(data);
   }
 
+  @Post('force-restart')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.TEACHER)
+  async forceRestart(@CurrentUser() user: User, @Body() dto: StartSessionDto) {
+    const data = await this.attendanceService.forceRestart(user.id, dto);
+    return this.wrapResponse(data);
+  }
+
   @Post('checkin')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.STUDENT)
@@ -50,6 +60,30 @@ export class AttendanceController {
   @Roles(UserRole.TEACHER)
   async end(@CurrentUser() user: User, @Body() dto: EndSessionDto) {
     const data = await this.attendanceService.end(user.id, dto.sessionId);
+    return this.wrapResponse(data);
+  }
+
+  @Post('cancel')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.TEACHER)
+  async cancel(@CurrentUser() user: User, @Body() dto: CancelSessionDto) {
+    const data = await this.attendanceService.cancel(user.id, dto.sessionId, dto.reason);
+    return this.wrapResponse(data);
+  }
+
+  @Post('extend')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.TEACHER)
+  async extend(@CurrentUser() user: User, @Body() dto: ExtendSessionDto) {
+    const data = await this.attendanceService.extend(user.id, dto.sessionId, dto.extraSeconds);
+    return this.wrapResponse(data);
+  }
+
+  @Get('pod/:podId/active')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  async findActiveByPod(@CurrentUser() user: User, @Param('podId') podId: string) {
+    const data = await this.attendanceService.findActiveByPodId(user.id, podId);
     return this.wrapResponse(data);
   }
 

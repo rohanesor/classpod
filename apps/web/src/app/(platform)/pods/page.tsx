@@ -28,6 +28,10 @@ import {
   Bluetooth,
   Sparkles,
   RefreshCw,
+  RotateCcw,
+  PlayCircle,
+  Trash2,
+  Timer,
 } from 'lucide-react';
 import { useAttendanceCameraFlow } from '@/hooks/use-attendance-camera-flow';
 import type { FrameDetection } from '@classpod/shared';
@@ -110,6 +114,7 @@ export default function PodsPage() {
   const [selectedAttendancePod, setSelectedAttendancePod] = useState<Pod | null>(null);
   const [attendanceSession, setAttendanceSession] = useState<any | null>(null);
   const [duration, setDuration] = useState<number>(90);
+  const [isStartingSession, setIsStartingSession] = useState(false);
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [localTimeRemaining, setLocalTimeRemaining] = useState<number | null>(null);
   const [recentlyUpdated, setRecentlyUpdated] = useState<Record<string, string>>({});
@@ -421,32 +426,24 @@ export default function PodsPage() {
     setAttendanceError(null);
     cameraFlow.resetAnalysis();
 
-    // Check if there is already an active session running for this pod (Teachers check active-sessions)
+    // Check if there is already an active session running for this pod
     try {
-      const response = await apiClient.get<any[]>('/logs/active-sessions');
-      const podSession = (response.data || []).find(
-        (s: any) => s.podId === pod.id && s.status === 'ACTIVE'
-      );
-
-      if (podSession) {
-        const liveRes = await apiClient.get<any>(`/attendance/session/${podSession.id}/live`);
-        if (liveRes.data) {
-          setAttendanceSession({
-            id: podSession.id,
-            podId: podSession.podId,
-            status: 'ACTIVE',
-            expiresAt: podSession.expiresAt,
-            ...liveRes.data,
-          });
-        }
+      const activeRes = await apiClient.get<any>(`/attendance/pod/${pod.id}/active`);
+      if (activeRes.data) {
+        setAttendanceSession({
+          ...activeRes.data,
+          id: activeRes.data.id,
+          podId: activeRes.data.podId || pod.id,
+          status: 'ACTIVE',
+        });
       }
     } catch (err) {
-      window.console.error('Failed to check active session:', err);
+      window.console.warn('Failed to check active session:', err);
     }
   };
 
   const handleStartSession = async () => {
-    if (!selectedAttendancePod || cameraFlow.isProcessing) return;
+    if (!selectedAttendancePod || isStartingSession || cameraFlow.isProcessing) return;
     setAttendanceError(null);
     await cameraFlow.startCameraAnalysis();
   };
@@ -466,6 +463,86 @@ export default function PodsPage() {
       setAttendanceError(err?.message || 'Failed to end attendance session.');
     } finally {
       setIsEndingSession(false);
+    }
+  };
+
+  const handleCancelSession = async () => {
+    if (!attendanceSession) return;
+    setIsEndingSession(true);
+    setAttendanceError(null);
+    try {
+      await apiClient.post('/attendance/cancel', {
+        sessionId: attendanceSession.id,
+        reason: 'Teacher cancelled session',
+      });
+      setAttendanceSession(null);
+      setIsAttendanceOpen(false);
+      setSelectedAttendancePod(null);
+    } catch (err: any) {
+      setAttendanceError(err?.message || 'Failed to cancel attendance session.');
+    } finally {
+      setIsEndingSession(false);
+    }
+  };
+
+  const handleExtendSession = async (extraSeconds: number) => {
+    if (!attendanceSession) return;
+    setAttendanceError(null);
+    try {
+      const response = await apiClient.post<any>('/attendance/extend', {
+        sessionId: attendanceSession.id,
+        extraSeconds,
+      });
+      if (response.data?.expiresAt) {
+        setAttendanceSession((prev: any) => ({
+          ...prev,
+          expiresAt: response.data.expiresAt,
+          duration: response.data.duration,
+        }));
+        const diff = Math.max(0, Math.ceil((new Date(response.data.expiresAt).getTime() - Date.now()) / 1000));
+        setLocalTimeRemaining(diff);
+      }
+    } catch (err: any) {
+      setAttendanceError(err?.message || 'Failed to extend session timer.');
+    }
+  };
+
+  const handleForceRestartSession = async () => {
+    if (!selectedAttendancePod) return;
+    setIsStartingSession(true);
+    setAttendanceError(null);
+    try {
+      const response = await apiClient.post<any>('/attendance/force-restart', {
+        podId: selectedAttendancePod.id,
+        duration,
+      });
+      const liveRes = await apiClient.get<any>(`/attendance/session/${response.data.id}/live`);
+      setAttendanceSession({
+        ...response.data,
+        ...(liveRes.data || {}),
+      });
+    } catch (err: any) {
+      setAttendanceError(err?.message || 'Failed to restart attendance session.');
+    } finally {
+      setIsStartingSession(false);
+    }
+  };
+
+  const handleResumeActiveSession = async () => {
+    if (!selectedAttendancePod) return;
+    setAttendanceError(null);
+    try {
+      const activeRes = await apiClient.get<any>(`/attendance/pod/${selectedAttendancePod.id}/active`);
+      if (activeRes.data) {
+        setAttendanceSession({
+          ...activeRes.data,
+          id: activeRes.data.id,
+          podId: activeRes.data.podId || selectedAttendancePod.id,
+          status: 'ACTIVE',
+        });
+      }
+    } catch (err: any) {
+      setAttendanceError(err?.message || 'Failed to resume active session.');
     }
   };
 
@@ -1533,7 +1610,7 @@ export default function PodsPage() {
             {!attendanceSession ? (
               /* Pre-Session States (IDLE, CAPTURING_5S, ANALYZING, ANALYSIS_COMPLETE, ERROR) */
               <div className="p-6 space-y-6">
-                {attendanceError && (
+                {attendanceError && !attendanceError.includes('already an active attendance session') && (
                   <div className="flex items-center gap-2 p-3 text-xs bg-destructive/5 border border-destructive/10 text-destructive rounded-md">
                     <AlertCircle className="h-4 w-4 shrink-0" />
                     <span>{attendanceError}</span>
@@ -1625,46 +1702,118 @@ export default function PodsPage() {
                       )}
                     </div>
 
-                    <p className="text-xs text-center text-muted-foreground italic">
-                      The 90-second attendance countdown timer will begin automatically once baseline aggregation completes.
-                    </p>
-                  </div>
-                )}
-
-                {/* State: ERROR / RETRY */}
-                {cameraFlow.analysisState === 'ERROR' && (
-                  <div className="space-y-4 animate-in fade-in">
-                    <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 space-y-2">
-                      <div className="flex items-center gap-2 text-destructive font-bold text-sm">
-                        <AlertCircle className="h-5 w-5 shrink-0" />
-                        <span>Camera Detection Failed</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {cameraFlow.errorMessage || 'Camera disconnected or insufficient valid frames were captured during the 5-second window.'}
-                      </p>
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-2">
+                    {/* Window Controls */}
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => cameraFlow.abortCapture()}
+                        className="text-xs text-muted-foreground hover:text-destructive"
+                      >
+                        <X className="h-3.5 w-3.5 mr-1" />
+                        <span>Cancel Analysis</span>
+                      </Button>
                       <Button
                         type="button"
                         variant="secondary"
-                        onClick={() => cameraFlow.resetAnalysis()}
+                        size="sm"
+                        onClick={() => cameraFlow.skipToSession()}
+                        className="text-xs"
                       >
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={() => cameraFlow.startCameraAnalysis()}
-                        className="flex items-center gap-1.5 bg-primary"
-                      >
-                        <RefreshCw className="h-4 w-4" />
-                        <span>Retry 5-Second Analysis</span>
+                        <PlayCircle className="h-3.5 w-3.5 mr-1" />
+                        <span>Skip to Session (Manual)</span>
                       </Button>
                     </div>
+                  </div>
+                )}
+
+                {/* State: ERROR OR ACTIVE SESSION CONFLICT */}
+                {(cameraFlow.analysisState === 'ERROR' || (attendanceError && attendanceError.includes('already an active attendance session'))) && (
+                  <div className="space-y-4 animate-in fade-in">
+                    {/* Conflict Card: Active Session in Progress */}
+                    {((attendanceError && attendanceError.includes('already an active attendance session')) ||
+                      (cameraFlow.errorMessage && cameraFlow.errorMessage.includes('already an active attendance session'))) ? (
+                      <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-3">
+                        <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+                          <Timer className="h-5 w-5 shrink-0 animate-pulse" />
+                          <span>Active Attendance Session in Progress</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          An attendance session for <strong>{selectedAttendancePod.name}</strong> is already active in the background. Choose how you would like to proceed:
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2">
+                          <Button
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            onClick={handleResumeActiveSession}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                          >
+                            <PlayCircle className="h-4 w-4 mr-1.5" />
+                            <span>Resume Session</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={handleEndSession}
+                            className="text-xs"
+                          >
+                            <X className="h-4 w-4 mr-1.5" />
+                            <span>End Active Session</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={handleForceRestartSession}
+                            className="text-xs border border-amber-500/40 text-amber-300 hover:bg-amber-500/20"
+                          >
+                            <RotateCcw className="h-4 w-4 mr-1.5" />
+                            <span>Force Restart</span>
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Standard Camera Error Card */
+                      <>
+                        <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 space-y-2">
+                          <div className="flex items-center gap-2 text-destructive font-bold text-sm">
+                            <AlertCircle className="h-5 w-5 shrink-0" />
+                            <span>Camera Detection Failed</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {cameraFlow.errorMessage || attendanceError || 'Camera disconnected or insufficient valid frames were captured.'}
+                          </p>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => {
+                              cameraFlow.resetAnalysis();
+                              setAttendanceError(null);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={() => cameraFlow.startCameraAnalysis()}
+                            className="flex items-center gap-1.5 bg-primary"
+                          >
+                            <RefreshCw className="h-4 w-4" />
+                            <span>Retry 5-Second Analysis</span>
+                          </Button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
                 {/* State: IDLE */}
-                {cameraFlow.analysisState === 'IDLE' && (
+                {cameraFlow.analysisState === 'IDLE' && !attendanceError && (
                   <>
                     <div className="p-4 rounded-lg bg-primary/5 border border-primary/10 flex items-start gap-3">
                       <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" />
@@ -1727,7 +1876,7 @@ export default function PodsPage() {
                     <span>{attendanceError}</span>
                   </div>
                 )}
-                {/* Countdown & End Button */}
+                {/* Countdown & Session Control Toolbar */}
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-xl border bg-accent/40">
                   <div className="flex items-center gap-3">
                     <div className="p-3 bg-primary/10 rounded-full text-primary animate-pulse">
@@ -1735,21 +1884,55 @@ export default function PodsPage() {
                     </div>
                     <div>
                       <p className="text-xs uppercase font-bold tracking-wider text-muted-foreground">Time Remaining</p>
-                      <p className="text-2xl font-extrabold text-foreground tracking-tight">
-                        {localTimeRemaining !== null ? `${localTimeRemaining}s` : 'Calculating...'}
-                      </p>
+                      <div className="flex items-baseline gap-2">
+                        <p className="text-2xl font-extrabold text-foreground tracking-tight">
+                          {localTimeRemaining !== null ? `${localTimeRemaining}s` : 'Calculating...'}
+                        </p>
+                        {/* Quick Time Extender Buttons */}
+                        <div className="flex items-center gap-1.5 ml-2">
+                          <button
+                            type="button"
+                            onClick={() => handleExtendSession(30)}
+                            className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 transition-all"
+                            title="Add 30 seconds"
+                          >
+                            +30s
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleExtendSession(60)}
+                            className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 transition-all"
+                            title="Add 60 seconds"
+                          >
+                            +60s
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  <Button
-                    variant="destructive"
-                    onClick={handleEndSession}
-                    disabled={isEndingSession}
-                    className="w-full sm:w-auto shadow-md"
-                  >
-                    {isEndingSession && <Loader2 className="h-4 w-4 animate-spin" />}
-                    <span>End Session</span>
-                  </Button>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleCancelSession}
+                      disabled={isEndingSession}
+                      className="border border-destructive/30 text-destructive hover:bg-destructive/10 text-xs"
+                      title="Void session without saving absences"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      <span>Void / Cancel</span>
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={handleEndSession}
+                      disabled={isEndingSession}
+                      className="shadow-md font-bold text-xs"
+                    >
+                      {isEndingSession && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+                      <span>End & Finalize</span>
+                    </Button>
+                  </div>
                 </div>
 
                 {/* AUTOMATED HARDWARE & AI OCCUPANCY DETECTION CARD */}

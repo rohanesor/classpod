@@ -14,6 +14,7 @@ import {
   AttendanceDecisionStatus,
   EnrollmentStatus,
   GatewayObservationType,
+  UserRole,
 } from '@prisma/client';
 import { StartSessionDto } from '../dtos/start-session.dto';
 import { CheckinDto } from '../dtos/checkin.dto';
@@ -389,6 +390,165 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     });
 
     return updatedSession;
+  }
+
+  /**
+   * Finds the currently active attendance session for a specific Pod, running lazy expiration check.
+   */
+  async findActiveByPodId(teacherId: string, podId: string) {
+    const pod = await this.prisma.pod.findUnique({
+      where: { id: podId },
+    });
+    if (!pod || pod.teacherId !== teacherId) {
+      throw new ForbiddenException('You do not own this pod');
+    }
+
+    // Find any session for this pod with status ACTIVE
+    const activeSessions = await this.prisma.attendanceSession.findMany({
+      where: {
+        podId,
+        status: AttendanceSessionStatus.ACTIVE,
+      },
+    });
+
+    for (const s of activeSessions) {
+      await this.lazyExpireCheck(s.id);
+    }
+
+    const session = await this.prisma.attendanceSession.findFirst({
+      where: {
+        podId,
+        status: AttendanceSessionStatus.ACTIVE,
+        expiresAt: { gt: new Date() },
+      },
+      include: {
+        pod: true,
+      },
+      orderBy: { startedAt: 'desc' },
+    });
+
+    if (!session) {
+      return null;
+    }
+
+    return this.findLive(teacherId, UserRole.TEACHER, session.id);
+  }
+
+  /**
+   * Cancels / Voids an ongoing attendance session.
+   */
+  async cancel(teacherId: string, sessionId: string, reason?: string): Promise<AttendanceSession> {
+    const session = await this.prisma.attendanceSession.findUnique({
+      where: { id: sessionId },
+    });
+    if (!session) {
+      throw new NotFoundException('Attendance session not found');
+    }
+
+    const pod = await this.prisma.pod.findUnique({
+      where: { id: session.podId },
+    });
+    if (!pod || pod.teacherId !== teacherId) {
+      throw new ForbiddenException('You do not own this pod');
+    }
+
+    const updatedSession = await this.prisma.attendanceSession.update({
+      where: { id: sessionId },
+      data: {
+        status: AttendanceSessionStatus.CLOSED,
+        endedAt: new Date(),
+      },
+    });
+
+    await this.prisma.attendanceDecision.updateMany({
+      where: {
+        sessionId,
+        status: AttendanceDecisionStatus.PENDING,
+      },
+      data: {
+        status: AttendanceDecisionStatus.EXPIRED,
+      },
+    });
+
+    this.eventLogger.audit('attendance.session.cancelled', {
+      actorUserId: teacherId,
+      entityType: 'AttendanceSession',
+      entityId: sessionId,
+      podId: session.podId,
+      reason: reason || 'Teacher cancelled session',
+    });
+
+    this.eventLogger.event(ATTENDANCE_EVENT_NAMES.CLOSED, {
+      sessionId,
+      podId: session.podId,
+      teacherId,
+    });
+
+    return updatedSession;
+  }
+
+  /**
+   * Extends the duration of an ongoing attendance session by N seconds.
+   */
+  async extend(teacherId: string, sessionId: string, extraSeconds: number): Promise<AttendanceSession> {
+    const session = await this.prisma.attendanceSession.findUnique({
+      where: { id: sessionId },
+    });
+    if (!session) {
+      throw new NotFoundException('Attendance session not found');
+    }
+
+    const pod = await this.prisma.pod.findUnique({
+      where: { id: session.podId },
+    });
+    if (!pod || pod.teacherId !== teacherId) {
+      throw new ForbiddenException('You do not own this pod');
+    }
+
+    if (session.status !== AttendanceSessionStatus.ACTIVE) {
+      throw new BadRequestException('Cannot extend a closed or expired session');
+    }
+
+    const currentExpiry = session.expiresAt ? new Date(session.expiresAt).getTime() : Date.now();
+    const baseTime = Math.max(Date.now(), currentExpiry);
+    const newExpiresAt = new Date(baseTime + extraSeconds * 1000);
+    const newTotalDuration = (session.duration || 90) + extraSeconds;
+
+    const updatedSession = await this.prisma.attendanceSession.update({
+      where: { id: sessionId },
+      data: {
+        expiresAt: newExpiresAt,
+        duration: newTotalDuration,
+      },
+    });
+
+    this.eventLogger.audit('attendance.session.extended', {
+      actorUserId: teacherId,
+      entityType: 'AttendanceSession',
+      entityId: sessionId,
+      extraSeconds,
+      newExpiresAt,
+    });
+
+    return updatedSession;
+  }
+
+  /**
+   * Atomically closes any existing active sessions for the pod and starts a fresh one.
+   */
+  async forceRestart(teacherId: string, dto: StartSessionDto): Promise<AttendanceSession> {
+    const activeSessions = await this.prisma.attendanceSession.findMany({
+      where: {
+        podId: dto.podId,
+        status: AttendanceSessionStatus.ACTIVE,
+      },
+    });
+
+    for (const s of activeSessions) {
+      await this.end(teacherId, s.id);
+    }
+
+    return this.start(teacherId, dto);
   }
 
   /**

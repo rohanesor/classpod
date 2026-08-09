@@ -16,6 +16,10 @@ import {
   Loader2,
   RotateCw,
   ArrowRight,
+  Timer,
+  Trash2,
+  PlayCircle,
+  Square,
 } from 'lucide-react';
 
 interface AttendanceSession {
@@ -224,18 +228,36 @@ function AttendancePageBody({
     return sessions.filter((s: AttendanceSession) => s.podId === selectedPodId);
   }, [sessions, selectedPodId]);
 
+  const handleEndSessionQuick = async (sessionId: string) => {
+    try {
+      await apiClient.post('/attendance/end', { sessionId });
+      loadSessions();
+    } catch (err: any) {
+      window.console.error('Failed to end session:', err);
+    }
+  };
+
+  const handleCancelSessionQuick = async (sessionId: string) => {
+    try {
+      await apiClient.post('/attendance/cancel', { sessionId, reason: 'Teacher cancelled from logs' });
+      loadSessions();
+    } catch (err: any) {
+      window.console.error('Failed to cancel session:', err);
+    }
+  };
+
+  const activeSessionsList = useMemo(() => {
+    return sessions.filter((s: any) => s.status === 'ACTIVE');
+  }, [sessions]);
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-5">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
-            Attendance Log
-          </h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {isTeacher
-              ? 'Monitor live sessions, view student check-in telemetry, and verify attendance records.'
-              : 'Track your presence logs, check-ins, and verified verification records.'}
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Attendance Log</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Monitor live sessions, view student check-in telemetry, and verify attendance records.
           </p>
         </div>
         <div>
@@ -253,6 +275,62 @@ function AttendancePageBody({
           </Button>
         </div>
       </div>
+
+      {/* Active Live Sessions Banner for Teachers */}
+      {isTeacher && activeSessionsList.length > 0 && (
+        <div className="space-y-3">
+          {activeSessionsList.map((activeSession: any) => (
+            <div
+              key={activeSession.id}
+              className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-full animate-pulse shrink-0">
+                  <Timer className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-foreground">{activeSession.podName || 'Class Pod'}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider">
+                      Live Active Session
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Started at {new Date(activeSession.startedAt).toLocaleTimeString()} &bull; Duration: {activeSession.duration}s
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Link href="/pods">
+                  <Button size="sm" variant="default" className="text-xs font-bold bg-emerald-600 hover:bg-emerald-700">
+                    <PlayCircle className="h-3.5 w-3.5 mr-1" />
+                    <span>Open in Pods</span>
+                  </Button>
+                </Link>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => handleCancelSessionQuick(activeSession.id)}
+                  className="text-xs border border-destructive/30 text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  <span>Void</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => handleEndSessionQuick(activeSession.id)}
+                  className="text-xs"
+                >
+                  <Square className="h-3.5 w-3.5 mr-1" />
+                  <span>End</span>
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {error && (
         <div className="flex items-center gap-3 p-4 border border-destructive/20 bg-destructive/5 text-destructive rounded-lg shadow-sm">
