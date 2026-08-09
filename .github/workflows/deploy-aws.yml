@@ -54,8 +54,8 @@ jobs:
       - name: Build & Push AI Detection Image to ECR
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: apps/ai-detection/Dockerfile
+          context: ./apps/ai-detection
+          file: ./apps/ai-detection/Dockerfile
           push: true
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/classpod-ai-detection:latest
