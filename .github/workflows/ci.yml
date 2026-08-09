@@ -49,6 +49,9 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate --schema apps/api/prisma/schema.prisma
 
+      - name: Build Shared Package
+        run: npm run build --workspace=@classpod/shared
+
       - name: Typecheck NestJS API
         run: npx tsc --noEmit -p apps/api/tsconfig.json
 
@@ -129,6 +132,9 @@ jobs:
 
       - name: Generate Prisma Client
         run: npx prisma generate --schema apps/api/prisma/schema.prisma
+
+      - name: Build Shared Package
+        run: npm run build --workspace=@classpod/shared
 
       - name: Build NestJS API
         run: npm run build --workspace=@classpod/api
