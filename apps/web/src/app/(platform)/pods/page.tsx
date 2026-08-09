@@ -1647,7 +1647,7 @@ export default function PodsPage() {
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs text-muted-foreground font-medium">Camera Status:</span>
                       <span
                         className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold border ${
@@ -1659,6 +1659,32 @@ export default function PodsPage() {
                         <Camera className="h-3.5 w-3.5" />
                         {attendanceSession.gatewayStatus?.cameraStatus || (attendanceSession.latestAiObservation ? 'Analysis Complete' : 'Capturing...')}
                       </span>
+
+                      {(!attendanceSession.latestAiObservation || attendanceSession.gatewayStatus?.cameraStatus === 'Capturing...') && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              await apiClient.post('/gateway/esp32-cam-node-1/simulate-observation', {
+                                sessionId: attendanceSession.id,
+                                personCount: 28,
+                                expectedCount: liveStats.total || 32,
+                              });
+                              const liveRes = await apiClient.get<any>(`/attendance/session/${attendanceSession.id}/live`);
+                              if (liveRes.data) {
+                                setAttendanceSession(liveRes.data);
+                              }
+                            } catch (err) {
+                              window.console.error('Trigger capture error:', err);
+                            }
+                          }}
+                          className="h-7 text-xs px-2.5 bg-purple-500/10 border-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-all"
+                        >
+                          📸 Trigger Frame (Demo)
+                        </Button>
+                      )}
                     </div>
                   </div>
 

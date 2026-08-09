@@ -97,6 +97,36 @@ export class GatewayController {
     };
   }
 
+  @Post(':id/simulate-observation')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  async simulateObservation(@Param('id') id: string, @Body() body: any): Promise<ApiEnvelope<any>> {
+    const data = await this.gatewayService.submitObservation({
+      gatewayId: id,
+      sessionId: body?.sessionId,
+      type: 'PERSON_COUNT',
+      timestamp: new Date().toISOString(),
+      payload: {
+        width: 640,
+        height: 480,
+        frame_bytes: 14500,
+        personCount: body?.personCount ?? 28,
+        expectedCount: body?.expectedCount ?? 30,
+        difference: (body?.personCount ?? 28) - (body?.expectedCount ?? 30),
+        confidence: 0.95,
+        aiStatus: 'ANALYSIS_COMPLETE',
+      },
+    });
+    const ctx = this.requestContext.getContext();
+    return {
+      data,
+      meta: {
+        requestId: ctx?.requestId ?? '',
+        correlationId: ctx?.correlationId ?? '',
+      },
+    };
+  }
+
   @Get(':id/latest-image')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
