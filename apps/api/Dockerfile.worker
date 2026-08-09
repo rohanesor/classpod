@@ -20,8 +20,8 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Install redis-cli for healthcheck
-RUN apk add --no-cache redis
+# Install redis-cli and openssl for healthcheck & Prisma engine compatibility
+RUN apk add --no-cache redis openssl
 
 # Copy package manifests & node_modules from builder
 COPY --from=builder /app/package.json ./package.json
