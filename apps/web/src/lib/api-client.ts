@@ -15,6 +15,10 @@ function getApiBaseUrl(): string {
     return process.env.NEXT_PUBLIC_API_BASE_URL;
   }
   if (typeof window !== 'undefined') {
+    const port = window.location.port;
+    if (port === '80' || port === '' || port === '443') {
+      return '/api';
+    }
     const hostname = window.location.hostname;
     if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
       return `${window.location.protocol}//${hostname}:4000`;
