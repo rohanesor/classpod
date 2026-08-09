@@ -7,11 +7,11 @@
 // WiFi Settings (Provide via build flags in platformio.ini or set below)
 // ==========================================
 #ifndef WIFI_SSID
-#define WIFI_SSID "YOUR_WIFI_SSID"      // Replace with your WiFi SSID Name
+#define WIFI_SSID "Airtel_aari_9058"
 #endif
 
 #ifndef WIFI_PASSWORD
-#define WIFI_PASSWORD "YOUR_WIFI_PASS"  // Replace with your WiFi Password
+#define WIFI_PASSWORD "Air@92789"
 #endif
 
 // ==========================================
