@@ -564,4 +564,34 @@ export class GatewayService {
 
     return updated;
   }
+
+  /**
+   * Run person detection on a single camera frame.
+   */
+  async detectFrame(dto: {
+    image: string;
+    frameIndex?: number;
+    timestamp?: number;
+    expectedCount?: number;
+  }): Promise<{
+    frameIndex: number;
+    timestamp: number;
+    personCount: number | null;
+    confidence: number | null;
+    detections: any[];
+    image: string;
+  }> {
+    const expected = dto.expectedCount ?? 30;
+    const result = await this.personDetector.detect(dto.image, expected);
+
+    return {
+      frameIndex: dto.frameIndex ?? 0,
+      timestamp: dto.timestamp ?? Date.now(),
+      personCount: result.personCount,
+      confidence: result.confidence,
+      detections: result.detections || [],
+      image: dto.image,
+    };
+  }
 }
+

@@ -25,8 +25,14 @@ import {
   Info,
   Clock,
   Camera,
-  Bluetooth
+  Bluetooth,
+  Sparkles,
+  RefreshCw,
 } from 'lucide-react';
+import { useAttendanceCameraFlow } from '@/hooks/use-attendance-camera-flow';
+import type { FrameDetection } from '@classpod/shared';
+
+
 
 export interface Pod {
   id: string;
@@ -104,7 +110,6 @@ export default function PodsPage() {
   const [selectedAttendancePod, setSelectedAttendancePod] = useState<Pod | null>(null);
   const [attendanceSession, setAttendanceSession] = useState<any | null>(null);
   const [duration, setDuration] = useState<number>(90);
-  const [isStartingSession, setIsStartingSession] = useState(false);
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [localTimeRemaining, setLocalTimeRemaining] = useState<number | null>(null);
   const [recentlyUpdated, setRecentlyUpdated] = useState<Record<string, string>>({});
@@ -385,6 +390,27 @@ export default function PodsPage() {
     }
   };
 
+  // 5-Second Camera Detection Flow Hook
+  const cameraFlow = useAttendanceCameraFlow({
+    podId: selectedAttendancePod?.id || '',
+    expectedStudentsCount: 32,
+    durationSeconds: duration,
+    onSessionStarted: async (newSession: any) => {
+      try {
+        const liveRes = await apiClient.get<any>(`/attendance/session/${newSession.id}/live`);
+        setAttendanceSession({
+          ...newSession,
+          ...(liveRes.data || {}),
+        });
+      } catch {
+        setAttendanceSession(newSession);
+      }
+    },
+    onError: (err: any) => {
+      setAttendanceError(err);
+    },
+  });
+
   // Teacher actions
   const openAttendanceModal = async (pod: Pod) => {
     setSelectedAttendancePod(pod);
@@ -393,6 +419,7 @@ export default function PodsPage() {
     setAttendanceSession(null);
     setLocalTimeRemaining(null);
     setAttendanceError(null);
+    cameraFlow.resetAnalysis();
 
     // Check if there is already an active session running for this pod (Teachers check active-sessions)
     try {
@@ -419,51 +446,9 @@ export default function PodsPage() {
   };
 
   const handleStartSession = async () => {
-    if (!selectedAttendancePod) return;
-    setIsStartingSession(true);
+    if (!selectedAttendancePod || cameraFlow.isProcessing) return;
     setAttendanceError(null);
-    try {
-      const response = await apiClient.post<any>('/attendance/start', {
-        podId: selectedAttendancePod.id,
-        duration: duration,
-      });
-
-      // Immediately fetch live session state
-      const liveRes = await apiClient.get<any>(`/attendance/session/${response.data.id}/live`);
-      setAttendanceSession({
-        ...response.data,
-        ...(liveRes.data || {}),
-      });
-    } catch (err: any) {
-      const msg = err?.message || 'Failed to start attendance session.';
-      if (msg.includes('already an active attendance session')) {
-        // Auto-recover existing active session
-        try {
-          const response = await apiClient.get<any[]>('/logs/active-sessions');
-          const podSession = (response.data || []).find(
-            (s: any) => s.podId === selectedAttendancePod.id && s.status === 'ACTIVE'
-          );
-          if (podSession) {
-            const liveRes = await apiClient.get<any>(`/attendance/session/${podSession.id}/live`);
-            if (liveRes.data) {
-              setAttendanceSession({
-                id: podSession.id,
-                podId: podSession.podId,
-                status: 'ACTIVE',
-                expiresAt: podSession.expiresAt,
-                ...liveRes.data,
-              });
-              return;
-            }
-          }
-        } catch (fetchErr) {
-          window.console.error('Failed to recover active session:', fetchErr);
-        }
-      }
-      setAttendanceError(msg);
-    } finally {
-      setIsStartingSession(false);
-    }
+    await cameraFlow.startCameraAnalysis();
   };
 
   const handleEndSession = async () => {
@@ -1546,7 +1531,7 @@ export default function PodsPage() {
             </div>
 
             {!attendanceSession ? (
-              /* State 1: No Session Running */
+              /* Pre-Session States (IDLE, CAPTURING_5S, ANALYZING, ANALYSIS_COMPLETE, ERROR) */
               <div className="p-6 space-y-6">
                 {attendanceError && (
                   <div className="flex items-center gap-2 p-3 text-xs bg-destructive/5 border border-destructive/10 text-destructive rounded-md">
@@ -1554,54 +1539,184 @@ export default function PodsPage() {
                     <span>{attendanceError}</span>
                   </div>
                 )}
-                <div className="p-4 rounded-lg bg-primary/5 border border-primary/10 flex items-start gap-3">
-                  <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-semibold text-sm text-primary">Start a check-in session</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Students currently logged in will see a banner to check in. The session will automatically close after the selected duration.
+
+                {/* State: CAPTURING_5S / ANALYZING / ANALYSIS_COMPLETE */}
+                {(cameraFlow.analysisState === 'CAPTURING_5S' ||
+                  cameraFlow.analysisState === 'ANALYZING' ||
+                  cameraFlow.analysisState === 'ANALYSIS_COMPLETE') && (
+                  <div className="space-y-5 animate-in fade-in zoom-in-95 duration-200">
+                    <div className="p-4 rounded-xl border border-purple-500/30 bg-purple-500/5 space-y-4">
+                      {/* Header & Status Pill */}
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Camera className="h-5 w-5 text-purple-400 animate-pulse" />
+                          <h4 className="font-bold text-sm text-foreground">5-Second Camera Analysis</h4>
+                        </div>
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold border ${
+                            cameraFlow.analysisState === 'ANALYSIS_COMPLETE'
+                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                              : cameraFlow.analysisState === 'ANALYZING'
+                              ? 'bg-blue-500/20 text-blue-400 border-blue-500/40'
+                              : 'bg-purple-500/20 text-purple-400 border-purple-500/40 animate-pulse'
+                          }`}
+                        >
+                          {cameraFlow.analysisState === 'CAPTURING_5S' && '📸 Capturing classroom...'}
+                          {cameraFlow.analysisState === 'ANALYZING' && '🔬 Aggregating consensus...'}
+                          {cameraFlow.analysisState === 'ANALYSIS_COMPLETE' && '🟢 Analysis Complete'}
+                        </span>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                          <span>
+                            Analyzing frames: <strong className="text-foreground">{cameraFlow.capturedFrames.length}</strong> captured
+                          </span>
+                          <span>{((cameraFlow.captureProgress / 100) * 5).toFixed(1)}s / 5.0s</span>
+                        </div>
+                        <div className="w-full h-2.5 bg-muted/40 rounded-full overflow-hidden border">
+                          <div
+                            className="h-full bg-gradient-to-r from-purple-500 via-indigo-500 to-emerald-500 transition-all duration-75 ease-out rounded-full"
+                            style={{ width: `${cameraFlow.captureProgress}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Frame Chips Stream */}
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                          Multi-Frame Stream ({cameraFlow.capturedFrames.length} frames)
+                        </p>
+                        <div className="flex gap-2 overflow-x-auto pb-1 max-h-24 scrollbar-thin">
+                          {cameraFlow.capturedFrames.map((frame: FrameDetection) => (
+                            <div
+                              key={frame.frameIndex}
+                              className="px-2.5 py-1.5 rounded-lg border bg-card/80 text-xs shrink-0 flex flex-col items-center justify-center space-y-0.5 border-purple-500/20 animate-in fade-in"
+                            >
+                              <span className="text-[10px] text-muted-foreground">F{frame.frameIndex + 1}</span>
+                              <span className="font-bold text-foreground">{frame.personCount}</span>
+                              <span className="text-[9px] text-purple-400">
+                                {Math.round(frame.confidence > 1 ? frame.confidence : frame.confidence * 100)}%
+                              </span>
+                            </div>
+                          ))}
+                          {cameraFlow.capturedFrames.length === 0 && (
+                            <div className="text-xs text-muted-foreground italic py-2">
+                              Starting camera stream...
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Consensus Result Pill on Complete */}
+                      {cameraFlow.aggregationResult && cameraFlow.aggregationResult.success && (
+                        <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-between text-xs animate-in fade-in">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-emerald-400" />
+                            <span className="font-semibold text-emerald-300">
+                              Established Baseline: <strong>{cameraFlow.aggregationResult.personCount} students</strong>
+                            </span>
+                          </div>
+                          <span className="text-emerald-400 font-bold">
+                            {cameraFlow.aggregationResult.confidence}% confidence
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-center text-muted-foreground italic">
+                      The 90-second attendance countdown timer will begin automatically once baseline aggregation completes.
                     </p>
                   </div>
-                </div>
+                )}
 
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold" htmlFor="attendance-duration">
-                    Session Duration (seconds)
-                  </label>
-                  <input
-                    id="attendance-duration"
-                    type="number"
-                    min={10}
-                    max={600}
-                    value={duration}
-                    onChange={(e) => setDuration(Math.max(10, parseInt(e.target.value) || 90))}
-                    className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Recommended: 90 seconds. Give students enough time to scan the page.
-                  </p>
-                </div>
+                {/* State: ERROR / RETRY */}
+                {cameraFlow.analysisState === 'ERROR' && (
+                  <div className="space-y-4 animate-in fade-in">
+                    <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 space-y-2">
+                      <div className="flex items-center gap-2 text-destructive font-bold text-sm">
+                        <AlertCircle className="h-5 w-5 shrink-0" />
+                        <span>Camera Detection Failed</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {cameraFlow.errorMessage || 'Camera disconnected or insufficient valid frames were captured during the 5-second window.'}
+                      </p>
+                    </div>
 
-                <div className="flex justify-end gap-2 border-t pt-4">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => {
-                      setIsAttendanceOpen(false);
-                      setSelectedAttendancePod(null);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleStartSession}
-                    disabled={isStartingSession}
-                    className="flex items-center gap-1.5"
-                  >
-                    {isStartingSession && <Loader2 className="h-4 w-4 animate-spin" />}
-                    <span>Start Session</span>
-                  </Button>
-                </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => cameraFlow.resetAnalysis()}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={() => cameraFlow.startCameraAnalysis()}
+                        className="flex items-center gap-1.5 bg-primary"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        <span>Retry 5-Second Analysis</span>
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* State: IDLE */}
+                {cameraFlow.analysisState === 'IDLE' && (
+                  <>
+                    <div className="p-4 rounded-lg bg-primary/5 border border-primary/10 flex items-start gap-3">
+                      <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="font-semibold text-sm text-primary">5-Second Baseline + 90-Second Attendance</h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          When started, the camera will first capture and aggregate classroom frames for <strong>5 seconds</strong> to establish a stable student count. The <strong>90-second</strong> attendance timer begins immediately after.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold" htmlFor="attendance-duration">
+                        Session Duration (seconds)
+                      </label>
+                      <input
+                        id="attendance-duration"
+                        type="number"
+                        min={10}
+                        max={600}
+                        value={duration}
+                        onChange={(e) => setDuration(Math.max(10, parseInt(e.target.value) || 90))}
+                        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Recommended: 90 seconds. Give students enough time to scan and check in.
+                      </p>
+                    </div>
+
+                    <div className="flex justify-end gap-2 border-t pt-4">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => {
+                          setIsAttendanceOpen(false);
+                          setSelectedAttendancePod(null);
+                          cameraFlow.resetAnalysis();
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleStartSession}
+                        disabled={cameraFlow.isProcessing}
+                        className="flex items-center gap-1.5"
+                      >
+                        {cameraFlow.isProcessing && <Loader2 className="h-4 w-4 animate-spin" />}
+                        <span>Start Attendance</span>
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
               /* State 2: Session Running */

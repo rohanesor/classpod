@@ -13,6 +13,7 @@ import {
   AttendanceSessionStatus,
   AttendanceDecisionStatus,
   EnrollmentStatus,
+  GatewayObservationType,
 } from '@prisma/client';
 import { StartSessionDto } from '../dtos/start-session.dto';
 import { CheckinDto } from '../dtos/checkin.dto';
@@ -180,6 +181,26 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
             studentId: enrollment.studentId,
             status: AttendanceDecisionStatus.PENDING,
           })),
+        });
+      }
+
+      if (dto.baselineObservation) {
+        await tx.gatewayObservation.create({
+          data: {
+            gatewayId: dto.baselineObservation.gatewayId || 'esp32-cam-node-1',
+            sessionId: createdSession.id,
+            type: GatewayObservationType.PERSON_COUNT,
+            payload: {
+              personCount: dto.baselineObservation.personCount,
+              confidence: dto.baselineObservation.confidence,
+              expectedCount: dto.baselineObservation.expectedCount ?? enrollments.length,
+              difference: dto.baselineObservation.difference ?? (dto.baselineObservation.personCount - enrollments.length),
+              image: dto.baselineObservation.image,
+              isAggregatedConsensus: true,
+              framesAnalyzed: dto.baselineObservation.framesAnalyzed,
+              consensusScore: dto.baselineObservation.consensusScore,
+            },
+          },
         });
       }
 

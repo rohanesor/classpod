@@ -8,6 +8,7 @@ import { GatewaySecretGuard } from '../guards/gateway-secret.guard';
 import { GatewayService } from '../services/gateway.service';
 import { HeartbeatDto } from '../dtos/heartbeat.dto';
 import { SubmitObservationDto } from '../dtos/submit-observation.dto';
+import { DetectFrameDto } from '../dtos/detect-frame.dto';
 import type { ApiEnvelope } from '@classpod/shared';
 
 @Controller('gateway')
@@ -16,6 +17,21 @@ export class GatewayController {
     private readonly gatewayService: GatewayService,
     private readonly requestContext: RequestContextService,
   ) {}
+
+  @Post('detect-frame')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  async detectFrame(@Body() dto: DetectFrameDto): Promise<ApiEnvelope<any>> {
+    const data = await this.gatewayService.detectFrame(dto);
+    const ctx = this.requestContext.getContext();
+    return {
+      data,
+      meta: {
+        requestId: ctx?.requestId ?? '',
+        correlationId: ctx?.correlationId ?? '',
+      },
+    };
+  }
 
   // --- Hardware endpoints (shared secret auth) ---
 
