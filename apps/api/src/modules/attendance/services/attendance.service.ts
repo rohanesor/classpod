@@ -678,12 +678,26 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     const now = new Date();
     const timeRemaining = Math.max(0, Math.floor((session.expiresAt.getTime() - now.getTime()) / 1000));
 
-    // Fetch latest Gateway Observation with AI metrics for this session (or fallback to latest gateway observation)
+    // Fetch latest Gateway Observation with AI metrics for this session
+    // PRIORITY: Always prefer the baseline consensus observation (isAggregatedConsensus=true)
+    // from the 5-second multi-frame capture over raw periodic ESP32 observations.
     let obs = await this.prisma.gatewayObservation.findFirst({
-      where: { sessionId },
+      where: {
+        sessionId,
+        payload: { path: ['isAggregatedConsensus'], equals: true },
+      },
       orderBy: { createdAt: 'desc' },
     });
 
+    // Fallback: If no consensus observation exists, use the latest session observation
+    if (!obs) {
+      obs = await this.prisma.gatewayObservation.findFirst({
+        where: { sessionId },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    // Last resort fallback: any recent gateway observation
     if (!obs) {
       obs = await this.prisma.gatewayObservation.findFirst({
         orderBy: { createdAt: 'desc' },
