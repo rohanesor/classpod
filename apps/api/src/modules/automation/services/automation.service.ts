@@ -181,6 +181,7 @@ export class AutomationService {
       where: { id: run.sessionId },
       include: {
         pod: true,
+        teacher: true,
         decisions: {
           include: {
             student: true,
