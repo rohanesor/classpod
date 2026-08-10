@@ -9,6 +9,10 @@ import {
   WHATSAPP_PROVIDER,
   WhatsAppAttachment,
 } from '../interfaces/whatsapp-provider.interface';
+import { AttendanceReportData } from '../interfaces/report-generator.interface';
+import { ExcelGeneratorService } from './excel-generator.service';
+import { PdfGeneratorService } from './pdf-generator.service';
+import { SummaryGeneratorService } from './summary-generator.service';
 
 @Injectable()
 export class AutomationService {
@@ -17,6 +21,9 @@ export class AutomationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
+    private readonly excelGenerator: ExcelGeneratorService,
+    private readonly pdfGenerator: PdfGeneratorService,
+    private readonly summaryGenerator: SummaryGeneratorService,
     @InjectQueue(QUEUE_NAMES.AUTOMATION)
     private readonly automationQueue: Queue,
     @Inject(WHATSAPP_PROVIDER)
@@ -155,10 +162,94 @@ export class AutomationService {
       throw new NotFoundException(`Artifact ${artifactId} not found`);
     }
 
-    const filePath = this.storageService.getFilePath(artifact.storagePath);
+    // 1. Check if physical file exists on disk
+    if (this.storageService.fileExists(artifact.storagePath)) {
+      const filePath = this.storageService.getFilePath(artifact.storagePath);
+      return {
+        artifact,
+        filePath,
+        buffer: null,
+      };
+    }
+
+    // 2. File missing on disk (e.g. container volume reset on EC2)
+    // Perform On-The-Fly Regeneration from session database records
+    this.logger.warn(`Artifact file missing at ${artifact.storagePath}. Regenerating report on the fly...`);
+
+    const run = await this.getRunById(artifact.runId);
+    const session = await this.prisma.attendanceSession.findUnique({
+      where: { id: run.sessionId },
+      include: {
+        pod: true,
+        decisions: {
+          include: {
+            student: true,
+            signals: true,
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException(`Attendance session ${run.sessionId} not found for artifact regeneration`);
+    }
+
+    const totalEnrolled = await this.prisma.enrollment.count({
+      where: { podId: session.podId, status: 'ACTIVE' },
+    });
+
+    const decisions = session.decisions;
+    const checkedInDecisions = decisions.filter(
+      (d) => d.status === 'CHECKED_IN' || d.status === 'VERIFIED'
+    );
+    const presentCount = checkedInDecisions.length;
+    const absentCount = Math.max(0, totalEnrolled - presentCount);
+    const verifiedCount = decisions.filter((d) => d.status === 'VERIFIED').length;
+    const pendingCount = decisions.filter((d) => d.status === 'CHECKED_IN').length;
+
+    const endedAt = session.endedAt || session.expiresAt || new Date();
+    const startedAt = session.startedAt;
+    const sessionDurationSec = Math.max(
+      0,
+      Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000)
+    );
+
+    const reportData: AttendanceReportData = {
+      session: session as any,
+      totalEnrolled,
+      presentCount,
+      absentCount,
+      verifiedCount,
+      pendingCount,
+      sessionDurationSec,
+      generatedAt: new Date(),
+    };
+
+    let generatedBuffer: Buffer;
+    if (artifact.type === 'EXCEL_REPORT') {
+      const excel = await this.excelGenerator.generate(reportData);
+      generatedBuffer = excel.buffer;
+    } else if (artifact.type === 'PDF_REPORT') {
+      const pdf = await this.pdfGenerator.generate(reportData);
+      generatedBuffer = pdf.buffer;
+    } else {
+      const textSummary = this.summaryGenerator.generateTextSummary(reportData);
+      generatedBuffer = Buffer.from(textSummary, 'utf-8');
+    }
+
+    // Save regenerated file back to disk storage
+    const pathPrefix = `automation/attendance/${session.id}`;
+    await this.storageService.upload(
+      artifact.filename,
+      generatedBuffer,
+      artifact.mimeType,
+      pathPrefix
+    );
+
     return {
       artifact,
-      filePath,
+      filePath: null,
+      buffer: generatedBuffer,
     };
   }
 
@@ -168,10 +259,15 @@ export class AutomationService {
       include: { run: true },
     });
 
+    if (artifact) {
+      return this.getArtifactForDownload(artifact.id);
+    }
+
     const filePath = this.storageService.getFilePath(storagePath);
     return {
-      artifact,
+      artifact: null,
       filePath,
+      buffer: null,
     };
   }
 }

@@ -7,6 +7,7 @@ import {
   Res,
   UseGuards,
   StreamableFile,
+  NotFoundException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import * as fs from 'fs';
@@ -59,15 +60,23 @@ export class AutomationController {
     @Param('artifactId') artifactId: string,
     @Res({ passthrough: true }) res: Response
   ): Promise<StreamableFile> {
-    const { artifact, filePath } = await this.automationService.getArtifactForDownload(artifactId);
+    const { artifact, filePath, buffer } = await this.automationService.getArtifactForDownload(artifactId);
 
     res.set({
       'Content-Type': artifact.mimeType,
       'Content-Disposition': `attachment; filename="${artifact.filename}"`,
     });
 
-    const fileStream = fs.createReadStream(filePath);
-    return new StreamableFile(fileStream);
+    if (buffer) {
+      return new StreamableFile(buffer);
+    }
+
+    if (filePath && fs.existsSync(filePath)) {
+      const fileStream = fs.createReadStream(filePath);
+      return new StreamableFile(fileStream);
+    }
+
+    throw new NotFoundException('File stream not available for download');
   }
 
   @Get('artifacts/download')
@@ -76,7 +85,7 @@ export class AutomationController {
     @Query('path') storagePath: string,
     @Res({ passthrough: true }) res: Response
   ): Promise<StreamableFile> {
-    const { artifact, filePath } = await this.automationService.getArtifactByPathForDownload(storagePath);
+    const { artifact, filePath, buffer } = await this.automationService.getArtifactByPathForDownload(storagePath);
 
     const filename = artifact ? artifact.filename : storagePath.split('/').pop() || 'download';
     const mimeType = artifact ? artifact.mimeType : 'application/octet-stream';
@@ -86,7 +95,15 @@ export class AutomationController {
       'Content-Disposition': `attachment; filename="${filename}"`,
     });
 
-    const fileStream = fs.createReadStream(filePath);
-    return new StreamableFile(fileStream);
+    if (buffer) {
+      return new StreamableFile(buffer);
+    }
+
+    if (filePath && fs.existsSync(filePath)) {
+      const fileStream = fs.createReadStream(filePath);
+      return new StreamableFile(fileStream);
+    }
+
+    throw new NotFoundException('File stream not available for download');
   }
 }

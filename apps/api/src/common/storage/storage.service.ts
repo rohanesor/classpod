@@ -42,4 +42,12 @@ export class StorageService {
     }
     throw new Error('Local file path retrieval not supported by current storage provider');
   }
+
+  fileExists(storagePath: string): boolean {
+    if ('fileExists' in this.provider) {
+      return (this.provider as any).fileExists(storagePath);
+    }
+    const path = this.getFilePath(storagePath);
+    return fs.existsSync(path);
+  }
 }

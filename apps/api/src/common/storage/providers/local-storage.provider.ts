@@ -53,20 +53,19 @@ export class LocalStorageProvider implements IStorageProvider {
     }
   }
 
+  // Check if physical file exists on disk
+  fileExists(storagePath: string): boolean {
+    const absolutePath = path.join(this.storageRoot, storagePath);
+    return fs.existsSync(absolutePath);
+  }
+
   // Helper to read a file for streaming in controller
   getLocalReadStream(storagePath: string): fs.ReadStream {
     const absolutePath = path.join(this.storageRoot, storagePath);
-    if (!fs.existsSync(absolutePath)) {
-      throw new Error(`File not found: ${storagePath}`);
-    }
     return fs.createReadStream(absolutePath);
   }
 
   getLocalFilePath(storagePath: string): string {
-    const absolutePath = path.join(this.storageRoot, storagePath);
-    if (!fs.existsSync(absolutePath)) {
-      throw new Error(`File not found: ${storagePath}`);
-    }
-    return absolutePath;
+    return path.join(this.storageRoot, storagePath);
   }
 }
