@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from PIL import Image, ImageOps, ImageEnhance
+import numpy as np
 from ultralytics import YOLO
 
 app = FastAPI(title="ClassPod AI Detection Service")
@@ -88,6 +89,61 @@ def suppress_nested_detections(detections: List[DetectionInfo]) -> List[Detectio
 
     return kept
 
+def apply_soft_nms(
+    detections: List[DetectionInfo],
+    sigma: float = 0.5,
+    score_thresh: float = 0.08,
+) -> List[DetectionInfo]:
+    """
+    Gaussian Soft-NMS: Decays confidence scores of overlapping boxes instead of deleting them.
+    Preserves students sitting directly behind one another in tight rows.
+    """
+    if len(detections) <= 1:
+        return detections
+
+    boxes = np.array([d.box for d in detections], dtype=np.float32)
+    scores = np.array([d.confidence for d in detections], dtype=np.float32)
+
+    N = len(boxes)
+    indexes = np.arange(N)
+
+    for i in range(N):
+        max_idx = i + np.argmax(scores[i:])
+        # Swap
+        scores[[i, max_idx]] = scores[[max_idx, i]]
+        boxes[[i, max_idx]] = boxes[[max_idx, i]]
+        indexes[[i, max_idx]] = indexes[[max_idx, i]]
+
+        pos_box = boxes[i]
+        pos_score = scores[i]
+
+        if pos_score < score_thresh:
+            break
+
+        # IoU with remaining boxes
+        x1 = np.maximum(pos_box[0], boxes[i+1:, 0])
+        y1 = np.maximum(pos_box[1], boxes[i+1:, 1])
+        x2 = np.minimum(pos_box[2], boxes[i+1:, 2])
+        y2 = np.minimum(pos_box[3], boxes[i+1:, 3])
+
+        inter_area = np.maximum(0.0, x2 - x1) * np.maximum(0.0, y2 - y1)
+        area1 = (pos_box[2] - pos_box[0]) * (pos_box[3] - pos_box[1])
+        area2 = (boxes[i+1:, 2] - boxes[i+1:, 0]) * (boxes[i+1:, 3] - boxes[i+1:, 1])
+        union_area = area1 + area2 - inter_area
+        iou = inter_area / np.maximum(union_area, 1e-6)
+
+        # Apply Gaussian decay weighting
+        weight = np.exp(-(iou ** 2) / sigma)
+        scores[i+1:] = scores[i+1:] * weight
+
+    kept_indices = np.where(scores >= score_thresh)[0]
+    return [
+        DetectionInfo(box=boxes[idx].tolist(), confidence=float(scores[idx]))
+        for idx in kept_indices
+    ]
+
+import numpy as np
+
 @app.post("/detect", response_model=DetectionResponse)
 async def detect_persons(request: DetectionRequest):
     start_time = time.time()
@@ -111,9 +167,9 @@ async def detect_persons(request: DetectionRequest):
         sharpened_img = sharpener.enhance(1.3)
 
         # Pass 1: Standard inference with lowered confidence threshold for ESP32-CAM (0.12)
-        results = model.predict(sharpened_img, conf=0.12, imgsz=640, verbose=False)
+        results = model.predict(sharpened_img, conf=0.10, imgsz=640, verbose=False)
         
-        person_detections = []
+        raw_detections = []
         
         if len(results) > 0:
             result = results[0]
@@ -126,13 +182,33 @@ async def detect_persons(request: DetectionRequest):
                     conf = float(box.conf[0].item())
                     xyxy = box.xyxy[0].tolist()
                     
-                    person_detections.append(DetectionInfo(
+                    raw_detections.append(DetectionInfo(
                         box=xyxy,
                         confidence=conf
                     ))
 
+        # Apply Perspective Tiling SAHI on distant top 40% region if image is sufficiently high-res
+        w_img, h_img = sharpened_img.size
+        if h_img >= 400 and len(raw_detections) > 0:
+            # Crop distant top-half band and re-infer at high density
+            top_band = sharpened_img.crop((0, 0, w_img, int(h_img * 0.45)))
+            results_top = model.predict(top_band, conf=0.08, imgsz=640, verbose=False)
+            if len(results_top) > 0:
+                for box in results_top[0].boxes:
+                    if int(box.cls[0].item()) == 0:
+                        conf = float(box.conf[0].item())
+                        xyxy = box.xyxy[0].tolist()
+                        # Map tile coordinates back to original frame
+                        raw_detections.append(DetectionInfo(
+                            box=xyxy,
+                            confidence=conf
+                        ))
+
         # Apply anatomical nested box suppression (filters raised hand / arm splits)
-        person_detections = suppress_nested_detections(person_detections)
+        clean_detections = suppress_nested_detections(raw_detections)
+
+        # Apply Gaussian Soft-NMS (preserves overlapping back-row students)
+        person_detections = apply_soft_nms(clean_detections, sigma=0.5, score_thresh=0.08)
 
         # Pass 2: Low-Light Shadow & Contrast Amplification
         # If fewer than 2 persons detected, apply multi-stage enhancement (Equalization + Brightness Boost)
@@ -159,11 +235,12 @@ async def detect_persons(request: DetectionRequest):
                             confidence=conf
                         ))
                 
-                enhanced_detections = suppress_nested_detections(enhanced_detections)
+                enhanced_clean = suppress_nested_detections(enhanced_detections)
+                enhanced_soft = apply_soft_nms(enhanced_clean, sigma=0.5, score_thresh=0.08)
 
                 # If enhanced image found more valid persons, adopt the enhanced detections
-                if len(enhanced_detections) > len(person_detections):
-                    person_detections = enhanced_detections
+                if len(enhanced_soft) > len(person_detections):
+                    person_detections = enhanced_soft
 
         person_count = len(person_detections)
         conf_sum = sum(d.confidence for d in person_detections)
@@ -171,7 +248,7 @@ async def detect_persons(request: DetectionRequest):
         
         processing_time_ms = int((time.time() - start_time) * 1000)
         
-        print(f"[YOLO11n] Detected {person_count} persons in {processing_time_ms}ms with avg confidence {avg_confidence:.2f}")
+        print(f"[DualHead-YOLO] Detected {person_count} persons in {processing_time_ms}ms with avg confidence {avg_confidence:.2f}")
         
         return DetectionResponse(
             personCount=person_count,
