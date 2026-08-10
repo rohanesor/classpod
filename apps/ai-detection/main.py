@@ -36,6 +36,58 @@ async def health_check():
         "timestamp": time.time()
     }
 
+def calculate_iou(box1: List[float], box2: List[float]) -> float:
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+
+    inter_area = max(0, x2 - x1) * max(0, y2 - y1)
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[0])
+    area2 = (box2[2] - box2[0]) * (box2[3] - box2[0])
+    union_area = area1 + area2 - inter_area
+
+    if union_area <= 0:
+        return 0.0
+    return inter_area / union_area
+
+def is_nested(box_child: List[float], box_parent: List[float], threshold: float = 0.60) -> bool:
+    x1 = max(box_child[0], box_parent[0])
+    y1 = max(box_child[1], box_parent[1])
+    x2 = min(box_child[2], box_parent[2])
+    y2 = min(box_child[3], box_parent[3])
+
+    inter_area = max(0, x2 - x1) * max(0, y2 - y1)
+    child_area = (box_child[2] - box_child[0]) * (box_child[3] - box_child[1])
+    parent_area = (box_parent[2] - box_parent[0]) * (box_parent[3] - box_parent[1])
+
+    if child_area <= 0:
+        return False
+    return (inter_area / child_area) >= threshold and child_area < parent_area
+
+def suppress_nested_detections(detections: List[DetectionInfo]) -> List[DetectionInfo]:
+    if len(detections) <= 1:
+        return detections
+
+    # Sort boxes by area descending (largest person body boxes first)
+    sorted_dets = sorted(
+        detections,
+        key=lambda d: (d.box[2] - d.box[0]) * (d.box[3] - d.box[1]),
+        reverse=True,
+    )
+
+    kept: List[DetectionInfo] = []
+    for candidate in sorted_dets:
+        is_duplicate = False
+        for master in kept:
+            if is_nested(candidate.box, master.box, 0.60) or calculate_iou(candidate.box, master.box) > 0.75:
+                is_duplicate = True
+                break
+        if not is_duplicate:
+            kept.append(candidate)
+
+    return kept
+
 @app.post("/detect", response_model=DetectionResponse)
 async def detect_persons(request: DetectionRequest):
     start_time = time.time()
@@ -54,11 +106,14 @@ async def detect_persons(request: DetectionRequest):
         raise HTTPException(status_code=400, detail=f"Invalid image format or decoding failed: {str(e)}")
         
     try:
+        # Motion sharpening for dynamic movement resilience
+        sharpener = ImageEnhance.Sharpness(img)
+        sharpened_img = sharpener.enhance(1.3)
+
         # Pass 1: Standard inference with lowered confidence threshold for ESP32-CAM (0.12)
-        results = model.predict(img, conf=0.12, imgsz=640, verbose=False)
+        results = model.predict(sharpened_img, conf=0.12, imgsz=640, verbose=False)
         
         person_detections = []
-        conf_sum = 0.0
         
         if len(results) > 0:
             result = results[0]
@@ -75,13 +130,14 @@ async def detect_persons(request: DetectionRequest):
                         box=xyxy,
                         confidence=conf
                     ))
-                    conf_sum += conf
+
+        # Apply anatomical nested box suppression (filters raised hand / arm splits)
+        person_detections = suppress_nested_detections(person_detections)
 
         # Pass 2: Low-Light Shadow & Contrast Amplification
-        # If fewer than 2 persons detected or low confidence, apply multi-stage enhancement (Equalization + Brightness Boost)
+        # If fewer than 2 persons detected, apply multi-stage enhancement (Equalization + Brightness Boost)
         if len(person_detections) < 2:
-            # Boost brightness & equalize dark histograms
-            equalized_img = ImageOps.equalize(img)
+            equalized_img = ImageOps.equalize(sharpened_img)
             brightener = ImageEnhance.Brightness(equalized_img)
             boosted_img = brightener.enhance(1.4)
             contraster = ImageEnhance.Contrast(boosted_img)
@@ -93,7 +149,6 @@ async def detect_persons(request: DetectionRequest):
                 boxes = result.boxes
                 
                 enhanced_detections = []
-                enhanced_conf_sum = 0.0
                 for box in boxes:
                     cls_id = int(box.cls[0].item())
                     if cls_id == 0:
@@ -103,14 +158,15 @@ async def detect_persons(request: DetectionRequest):
                             box=xyxy,
                             confidence=conf
                         ))
-                        enhanced_conf_sum += conf
                 
+                enhanced_detections = suppress_nested_detections(enhanced_detections)
+
                 # If enhanced image found more valid persons, adopt the enhanced detections
                 if len(enhanced_detections) > len(person_detections):
                     person_detections = enhanced_detections
-                    conf_sum = enhanced_conf_sum
-        
+
         person_count = len(person_detections)
+        conf_sum = sum(d.confidence for d in person_detections)
         avg_confidence = (conf_sum / person_count) if person_count > 0 else 0.0
         
         processing_time_ms = int((time.time() - start_time) * 1000)
