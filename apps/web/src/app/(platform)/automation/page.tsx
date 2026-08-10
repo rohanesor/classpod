@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import {
   FileSpreadsheet,
@@ -25,8 +25,9 @@ interface AutomationArtifact {
   type: 'EXCEL_REPORT' | 'PDF_REPORT' | 'AI_SUMMARY';
   filename: string;
   mimeType: string;
-  storagePath: string;
-  sizeBytes: number | null;
+  storagePath?: string;
+  sizeBytes?: number;
+  metadata?: Record<string, any>;
   createdAt: string;
 }
 
@@ -37,44 +38,41 @@ interface AutomationRun {
   teacherId: string;
   status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
   triggeredBy: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  error: string | null;
-  summary: string | null;
-  whatsappMessage: string | null;
-  whatsappSentAt: string | null;
+  completedAt?: string;
   createdAt: string;
+  summary?: string;
+  whatsappMessage?: string;
+  errorMessage?: string;
+  artifacts: AutomationArtifact[];
+  pod?: {
+    name: string;
+    subjectCode: string;
+  };
   session?: {
-    id: string;
     pod?: {
       name: string;
       subjectCode: string;
     };
   };
-  pod?: {
-    name: string;
-    subjectCode: string;
-  };
-  artifacts: AutomationArtifact[];
 }
 
 export default function AutomationHistoryPage() {
   const [runs, setRuns] = useState<AutomationRun[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [selectedRun, setSelectedRun] = useState<AutomationRun | null>(null);
-  const [previewType, setPreviewType] = useState<'summary' | 'whatsapp' | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [selectedRun, setSelectedRun] = useState<AutomationRun | null>(null);
+  const [previewType, setPreviewType] = useState<'summary' | 'whatsapp' | null>(null);
 
   const fetchHistory = async () => {
     setLoading(true);
     try {
-      const res = await apiClient.get<any>('/automation/history?limit=30');
-      setRuns(res.data?.runs || []);
-      setTotal(res.data?.total || 0);
+      const res = await apiClient.get<any>('/automation/history');
+      if (res.data) {
+        setRuns(res.data.runs || []);
+      }
     } catch (err: any) {
-      window.console.error('Failed to fetch automation history:', err);
+      setMessage({ type: 'error', text: err?.message || 'Failed to fetch automation history.' });
     } finally {
       setLoading(false);
     }
@@ -82,8 +80,6 @@ export default function AutomationHistoryPage() {
 
   useEffect(() => {
     fetchHistory();
-    const interval = window.setInterval(fetchHistory, 10000);
-    return () => window.clearInterval(interval);
   }, []);
 
   const handleRetrigger = async (runId: string) => {
@@ -94,7 +90,7 @@ export default function AutomationHistoryPage() {
       setMessage({ type: 'success', text: 'Automation pipeline retriggered successfully.' });
       fetchHistory();
     } catch (err: any) {
-      setMessage({ type: 'error', text: err?.message || 'Failed to retrigger automation.' });
+      setMessage({ type: 'error', text: err?.message || 'Failed to retrigger automation pipeline.' });
     } finally {
       setActionLoading(null);
     }
@@ -115,7 +111,37 @@ export default function AutomationHistoryPage() {
   };
 
   const getArtifactUrl = (artifact: AutomationArtifact) => {
-    return `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'}/automation/artifacts/${artifact.id}/download`;
+    const baseUrl = getApiBaseUrl();
+    const cleanBase = baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}/api`;
+    const token = typeof window !== 'undefined' ? window.localStorage.getItem('classpod_auth_token') : '';
+    return `${cleanBase}/automation/artifacts/${artifact.id}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  };
+
+  const handleDownloadArtifact = async (artifact: AutomationArtifact) => {
+    try {
+      const token = typeof window !== 'undefined' ? window.localStorage.getItem('classpod_auth_token') : null;
+      const url = getArtifactUrl(artifact);
+
+      const response = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (!response.ok) {
+        throw new Error(`Download failed (${response.status})`);
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = artifact.filename || `artifact_${artifact.type.toLowerCase()}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err: any) {
+      window.alert(err?.message || 'Failed to download file. Please try again.');
+    }
   };
 
   const completedCount = runs.filter((r) => r.status === 'COMPLETED').length;
@@ -138,64 +164,67 @@ export default function AutomationHistoryPage() {
           </p>
         </div>
         <Button onClick={fetchHistory} variant="secondary" size="sm" className="gap-2 self-start md:self-auto">
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh History
+          <RefreshCw className="h-4 w-4" />
+          <span>Refresh History</span>
         </Button>
       </div>
 
-      {/* Message Banner */}
+      {/* Alert Message */}
       {message && (
         <div
-          className={`p-4 rounded-xl border flex items-center justify-between text-sm ${
+          className={`flex items-center justify-between p-4 rounded-xl border text-xs font-semibold animate-in fade-in duration-200 ${
             message.type === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600'
-              : 'bg-destructive/10 border-destructive/20 text-destructive'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600'
+              : 'bg-destructive/10 border-destructive/30 text-destructive'
           }`}
         >
           <div className="flex items-center gap-2">
             {message.type === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
             <span>{message.text}</span>
           </div>
-          <button onClick={() => setMessage(null)} className="hover:opacity-70">
+          <button onClick={() => setMessage(null)} className="opacity-70 hover:opacity-100">
             <X className="h-4 w-4" />
           </button>
         </div>
       )}
 
-      {/* Metric Cards */}
+      {/* Metrics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="p-4 rounded-xl border bg-card shadow-sm space-y-1">
-          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Total Runs</span>
-          <p className="text-2xl font-extrabold">{total}</p>
+        <div className="p-4 rounded-xl border bg-card text-card-foreground shadow-sm space-y-1">
+          <span className="text-[10px] uppercase font-extrabold tracking-wider text-muted-foreground">Total Runs</span>
+          <p className="text-2xl font-black text-foreground">{runs.length}</p>
         </div>
-        <div className="p-4 rounded-xl border bg-emerald-500/5 border-emerald-500/20 shadow-sm space-y-1">
-          <span className="text-xs font-bold uppercase tracking-wider text-emerald-600">Completed</span>
-          <p className="text-2xl font-extrabold text-emerald-600">{completedCount}</p>
+        <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 text-card-foreground shadow-sm space-y-1">
+          <span className="text-[10px] uppercase font-extrabold tracking-wider text-emerald-600">Completed</span>
+          <p className="text-2xl font-black text-emerald-600">{completedCount}</p>
         </div>
-        <div className="p-4 rounded-xl border bg-amber-500/5 border-amber-500/20 shadow-sm space-y-1">
-          <span className="text-xs font-bold uppercase tracking-wider text-amber-600">Running / Pending</span>
-          <p className="text-2xl font-extrabold text-amber-600">{runningCount}</p>
+        <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 text-card-foreground shadow-sm space-y-1">
+          <span className="text-[10px] uppercase font-extrabold tracking-wider text-amber-600">Running / Pending</span>
+          <p className="text-2xl font-black text-amber-600">{runningCount}</p>
         </div>
-        <div className="p-4 rounded-xl border bg-destructive/5 border-destructive/20 shadow-sm space-y-1">
-          <span className="text-xs font-bold uppercase tracking-wider text-destructive">Failed</span>
-          <p className="text-2xl font-extrabold text-destructive">{failedCount}</p>
+        <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 text-card-foreground shadow-sm space-y-1">
+          <span className="text-[10px] uppercase font-extrabold tracking-wider text-destructive">Failed</span>
+          <p className="text-2xl font-black text-destructive">{failedCount}</p>
         </div>
       </div>
 
-      {/* History Table */}
-      <div className="border rounded-2xl bg-card shadow-sm overflow-hidden">
-        <div className="p-4 border-b bg-muted/30 font-bold text-sm">Attendance Automation Executions</div>
-        {loading && runs.length === 0 ? (
-          <div className="p-12 text-center space-y-3">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-            <p className="text-sm text-muted-foreground">Loading automation history...</p>
+      {/* Executions Table */}
+      <div className="border bg-card text-card-foreground rounded-2xl shadow-sm overflow-hidden space-y-0">
+        <div className="p-4 border-b bg-muted/20">
+          <h3 className="font-bold text-sm text-foreground">Attendance Automation Executions</h3>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center p-12 space-x-2 text-muted-foreground text-xs">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span>Loading automation history...</span>
           </div>
         ) : runs.length === 0 ? (
-          <div className="p-12 text-center space-y-2">
-            <Clock className="h-10 w-10 text-muted-foreground/40 mx-auto" />
-            <h3 className="font-bold text-base">No Automation Runs Found</h3>
-            <p className="text-xs text-muted-foreground">
-              Automation triggers automatically when a teacher completes an attendance session.
+          <div className="p-12 text-center text-xs text-muted-foreground space-y-2">
+            <Clock className="h-8 w-8 mx-auto text-muted-foreground/40" />
+            <p>No automation executions found yet.</p>
+            <p className="text-[11px] text-muted-foreground/70">
+              Automations run automatically whenever an Attendance Session ends or is finalized.
             </p>
           </div>
         ) : (
@@ -253,29 +282,27 @@ export default function AutomationHistoryPage() {
                       <td className="p-3.5">
                         <div className="flex items-center gap-2">
                           {excelArtifact ? (
-                            <a
-                              href={getArtifactUrl(excelArtifact)}
-                              target="_blank"
-                              rel="noreferrer"
+                            <button
+                              onClick={() => handleDownloadArtifact(excelArtifact)}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 font-bold transition-all"
+                              title={`Download ${excelArtifact.filename}`}
                             >
                               <FileSpreadsheet className="h-3.5 w-3.5" />
                               <span>Excel</span>
-                            </a>
+                            </button>
                           ) : (
                             <span className="text-muted-foreground/40 text-[10px]">—</span>
                           )}
 
                           {pdfArtifact ? (
-                            <a
-                              href={getArtifactUrl(pdfArtifact)}
-                              target="_blank"
-                              rel="noreferrer"
+                            <button
+                              onClick={() => handleDownloadArtifact(pdfArtifact)}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-600 hover:bg-rose-500/20 font-bold transition-all"
+                              title={`Download ${pdfArtifact.filename}`}
                             >
                               <FileText className="h-3.5 w-3.5" />
                               <span>PDF</span>
-                            </a>
+                            </button>
                           ) : (
                             <span className="text-muted-foreground/40 text-[10px]">—</span>
                           )}

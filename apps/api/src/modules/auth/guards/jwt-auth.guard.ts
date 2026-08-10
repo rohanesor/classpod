@@ -27,6 +27,11 @@ export class JwtAuthGuard implements CanActivate {
       }
     }
 
+    // 3. Fall back to ?token= query parameter (Browser Direct File Downloads)
+    if (!token && request.query && request.query.token) {
+      token = request.query.token as string;
+    }
+
     if (!token) {
       throw new UnauthorizedException('Authentication token missing');
     }

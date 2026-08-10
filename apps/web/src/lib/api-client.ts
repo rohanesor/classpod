@@ -10,9 +10,12 @@ class ApiError extends Error {
   }
 }
 
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
   if (process.env.NEXT_PUBLIC_API_BASE_URL) {
     return process.env.NEXT_PUBLIC_API_BASE_URL;
+  }
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
   }
   if (typeof window !== 'undefined') {
     const port = window.location.port;
@@ -21,7 +24,7 @@ function getApiBaseUrl(): string {
     }
     const hostname = window.location.hostname;
     if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
-      return `${window.location.protocol}//${hostname}:4000`;
+      return `${window.location.protocol}//${hostname}${port ? `:${port}` : ''}/api`;
     }
   }
   return 'http://localhost:4000';
