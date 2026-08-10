@@ -94,8 +94,10 @@ export default function DashboardPage() {
     if (!activeSession) return;
     setIsCheckinLoading(true);
     try {
+      // activeSession shape from backend: { session: { id, podId, ... }, decision: { status, ... } }
+      const sessionId = activeSession.session?.id || activeSession.id;
       await apiClient.post('/attendance/checkin', {
-        sessionId: activeSession.id,
+        sessionId,
       });
       // Immediately set state locally
       setActiveSession((prev: any) => {
