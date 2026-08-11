@@ -87,6 +87,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-classpod}:${POSTGRES_PASSWORD:-classpod}@postgres:5432/${POSTGRES_DB:-classpod}?schema=public
       REDIS_URL: redis://redis:6379
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-chars-long}
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-local-dev-secret-key}
     depends_on:
       postgres:
         condition: service_healthy
