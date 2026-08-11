@@ -18,7 +18,7 @@
 // Backend API Configuration (EC2 Target)
 // ==========================================
 #ifndef API_HOST
-#define API_HOST "3.107.200.248"       // ClassPod EC2 Public IP
+#define API_HOST "classpod.duckdns.org"       // ClassPod EC2 Domain
 #endif
 
 #ifndef API_PORT
