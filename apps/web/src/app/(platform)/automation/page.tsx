@@ -119,26 +119,19 @@ export default function AutomationHistoryPage() {
 
   const handleDownloadArtifact = async (artifact: AutomationArtifact) => {
     try {
-      const token = typeof window !== 'undefined' ? window.localStorage.getItem('classpod_auth_token') : null;
       const url = getArtifactUrl(artifact);
 
-      const response = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-
-      if (!response.ok) {
-        throw new Error(`Download failed (${response.status})`);
+      // On Android WebView / Mobile Browsers, URL.createObjectURL(blob) is blocked or silent.
+      // Opening the authenticated ?token= download URL triggers instant Android OS Download Manager download.
+      if (typeof window !== 'undefined') {
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.download = artifact.filename || `report.${artifact.type === 'EXCEL_REPORT' ? 'xlsx' : 'pdf'}`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
       }
-
-      const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = artifact.filename || `artifact_${artifact.type.toLowerCase()}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(downloadUrl);
     } catch (err: any) {
       window.alert(err?.message || 'Failed to download file. Please try again.');
     }
