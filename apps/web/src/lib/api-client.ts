@@ -1,4 +1,5 @@
 import type { ApiEnvelope, ErrorEnvelope } from '@classpod/shared';
+import { Capacitor } from '@capacitor/core';
 
 class ApiError extends Error {
   constructor(
@@ -18,6 +19,9 @@ export function getApiBaseUrl(): string {
     return process.env.NEXT_PUBLIC_API_URL;
   }
   if (typeof window !== 'undefined') {
+    if (Capacitor.isNativePlatform()) {
+      return 'http://3.107.200.248/api';
+    }
     const port = window.location.port;
     if (port === '80' || port === '' || port === '443') {
       return '/api';
@@ -27,7 +31,7 @@ export function getApiBaseUrl(): string {
       return `${window.location.protocol}//${hostname}${port ? `:${port}` : ''}/api`;
     }
   }
-  return 'http://localhost:4000';
+  return 'http://3.107.200.248/api';
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<ApiEnvelope<T>> {
