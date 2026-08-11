@@ -20,7 +20,7 @@ export function getApiBaseUrl(): string {
   }
   if (typeof window !== 'undefined') {
     if (Capacitor.isNativePlatform()) {
-      return 'http://classpod.duckdns.org/api';
+      return 'https://classpod.duckdns.org/api';
     }
     const port = window.location.port;
     if (port === '80' || port === '' || port === '443') {
@@ -31,7 +31,7 @@ export function getApiBaseUrl(): string {
       return `${window.location.protocol}//${hostname}${port ? `:${port}` : ''}/api`;
     }
   }
-  return 'http://classpod.duckdns.org/api';
+  return 'https://classpod.duckdns.org/api';
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<ApiEnvelope<T>> {
