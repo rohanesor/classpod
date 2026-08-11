@@ -26,8 +26,9 @@ export default function DownloadPage() {
         {/* Download Buttons */}
         <div className="space-y-3">
           <a
-            href="/ClassPod.apk"
-            download="ClassPod.apk"
+            href="https://github.com/rohanesor/classpod/releases/download/v2.0.0/app-release.apk"
+            target="_blank"
+            rel="noopener noreferrer"
             className="w-full py-3.5 px-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold text-sm rounded-xl shadow-lg shadow-blue-600/30 flex items-center justify-center space-x-2 transition-all transform active:scale-95"
           >
             <Download className="w-5 h-5" />
@@ -35,12 +36,12 @@ export default function DownloadPage() {
           </a>
 
           <a
-            href="/api/download/apk"
+            href="/ClassPod.apk"
             download="ClassPod.apk"
             className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs rounded-xl flex items-center justify-center space-x-2 border border-slate-700 transition-colors"
           >
             <Download className="w-4 h-4 text-slate-400" />
-            <span>Alternative Server Download Mirror</span>
+            <span>Alternative Direct Server Mirror</span>
           </a>
 
           <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
