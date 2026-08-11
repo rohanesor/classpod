@@ -25,6 +25,8 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 
+import { DownloadController } from './modules/download/download.controller';
+
 @Module({
   imports: [
     LoggerModule.forRootAsync({
@@ -69,6 +71,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
     LogsModule,
     HealthModule,
   ],
+  controllers: [DownloadController],
   providers: [
     {
       provide: APP_FILTER,
