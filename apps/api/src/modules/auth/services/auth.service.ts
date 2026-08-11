@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcryptjs from 'bcryptjs';
 import { PrismaService } from '../../../common/database/prisma.service';
@@ -6,6 +6,8 @@ import { EventLoggerService } from '../../../common/observability/event-logger.s
 import { LoginRateLimiterService } from './login-rate-limiter.service';
 import { LoginDto } from '../dtos/login.dto';
 import { RegisterDto } from '../dtos/register.dto';
+import { RegisterDeviceDto } from '../dtos/register-device.dto';
+import { AttendanceSessionStatus, AttendanceDecisionStatus } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -162,6 +164,23 @@ export class AuthService {
   }
 
   async logout(userId: string): Promise<void> {
+    // Check if student has an active attendance session/decision
+    const activeDecision = await this.prisma.attendanceDecision.findFirst({
+      where: {
+        studentId: userId,
+        status: {
+          in: [AttendanceDecisionStatus.PENDING, AttendanceDecisionStatus.CHECKED_IN],
+        },
+        session: {
+          status: AttendanceSessionStatus.ACTIVE,
+        },
+      },
+    });
+
+    if (activeDecision) {
+      throw new ForbiddenException('Logout is disabled while attendance is in progress.');
+    }
+
     this.eventLogger.audit('auth.logout.success', {
       actorUserId: userId,
       entityType: 'User',
@@ -172,5 +191,67 @@ export class AuthService {
       userId,
       timestamp: new Date().toISOString(),
     });
+  }
+
+  // Bind installation UUID to user
+  async registerDevice(userId: string, dto: RegisterDeviceDto, userAgent?: string) {
+    const existingDevice = await this.prisma.registeredDevice.findUnique({
+      where: { userId },
+    });
+
+    if (existingDevice) {
+      if (existingDevice.deviceId === dto.deviceId) {
+        return {
+          registered: true,
+          message: 'Device already registered for this account',
+          device: existingDevice,
+        };
+      }
+      throw new BadRequestException('Device not registered for this account.');
+    }
+
+    const newDevice = await this.prisma.registeredDevice.create({
+      data: {
+        userId,
+        deviceId: dto.deviceId,
+        platform: dto.platform || 'android',
+        userAgent,
+      },
+    });
+
+    this.eventLogger.audit('auth.device.registered', {
+      actorUserId: userId,
+      entityType: 'RegisteredDevice',
+      entityId: newDevice.id,
+      deviceId: dto.deviceId,
+    });
+
+    return {
+      registered: true,
+      message: 'Device registered successfully',
+      device: newDevice,
+    };
+  }
+
+  async getRegisteredDevice(userId: string) {
+    return this.prisma.registeredDevice.findUnique({
+      where: { userId },
+    });
+  }
+
+  async adminResetDevice(userId: string) {
+    const existing = await this.prisma.registeredDevice.findUnique({
+      where: { userId },
+    });
+
+    if (!existing) {
+      return { message: 'No device bound to this account' };
+    }
+
+    await this.prisma.registeredDevice.delete({
+      where: { userId },
+    });
+
+    return { message: `Device un-bound successfully for user ${userId}` };
   }
 }

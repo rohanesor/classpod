@@ -16,8 +16,17 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            storeFile file('classpod-release-key.jks')
+            storePassword System.getenv("RELEASE_STORE_PASSWORD") ?: "classpod123"
+            keyAlias System.getenv("RELEASE_KEY_ALIAS") ?: "classpod-release-key"
+            keyPassword System.getenv("RELEASE_KEY_PASSWORD") ?: "classpod123"
+        }
+    }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

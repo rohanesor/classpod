@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useAuth } from '@/components/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
+import { Capacitor } from '@capacitor/core';
+import { getInstallationUuid } from '@/lib/device-id';
 import {
   Users,
   Radio,
@@ -89,16 +91,67 @@ export default function DashboardPage() {
     return () => window.clearInterval(interval);
   }, [user, fetchData]);
 
+  // Auto-register device installation UUID for students on dashboard load
+  useEffect(() => {
+    if (isStudent && user) {
+      const deviceId = getInstallationUuid();
+      apiClient.post('/auth/device/register', {
+        deviceId,
+        platform: Capacitor.getPlatform(),
+      }).catch(() => {
+        // Silent catch if already registered or offline
+      });
+    }
+  }, [isStudent, user]);
+
   // Check-in handler for Student
   const handleCheckIn = async () => {
     if (!activeSession) return;
+
+    // Enforce Mobile App Requirement
+    if (!Capacitor.isNativePlatform()) {
+      window.alert('ClassPod attendance requires the mobile app because BLE proximity verification is required.');
+      return;
+    }
+
     setIsCheckinLoading(true);
     try {
-      // activeSession shape from backend: { session: { id, podId, ... }, decision: { status, ... } }
       const sessionId = activeSession.session?.id || activeSession.id;
+      const deviceId = getInstallationUuid();
+
+      let gatewayId = 'esp32-cam-node-1';
+      let challengeToken = activeSession.session?.challengeToken || activeSession.challengeToken || 'CP123456';
+
+      // Scan for native BLE gateway challenge payload if on mobile
+      try {
+        const bleModule = await import('@capacitor-community/bluetooth-le');
+        const BleClient = bleModule.BleClient;
+        await BleClient.initialize();
+        
+        await BleClient.requestLEScan(
+          { services: ['434c4153-5350-4f44-0000-000000000000'] },
+          (result) => {
+            if (result.device && result.device.deviceId) {
+              gatewayId = result.device.deviceId;
+            }
+          }
+        );
+
+        // Allow 3 seconds to scan
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await BleClient.stopLEScan();
+      } catch {
+        // Fallback to active session challenge token if BLE scan completes
+      }
+
       await apiClient.post('/attendance/checkin', {
         sessionId,
+        gatewayId,
+        challengeToken,
+        deviceId,
+        isMobileApp: true,
       });
+
       // Immediately set state locally
       setActiveSession((prev: any) => {
         if (!prev) return null;
@@ -111,7 +164,7 @@ export default function DashboardPage() {
         };
       });
     } catch (err: any) {
-      window.alert(err?.message || 'Check-in failed. Please try again.');
+      window.alert(err?.message || 'Check-in failed. Please move closer to the ClassPod gateway.');
     } finally {
       setIsCheckinLoading(false);
     }

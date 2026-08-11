@@ -1,10 +1,14 @@
-import { Controller, Post, Body, Get, Req, Res, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Get, Delete, Param, Req, Res, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { AuthService } from '../services/auth.service';
 import { LoginDto } from '../dtos/login.dto';
 import { RegisterDto } from '../dtos/register.dto';
+import { RegisterDeviceDto } from '../dtos/register-device.dto';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { RolesGuard } from '../guards/roles.guard';
+import { Roles } from '../decorators/roles.decorator';
 import { CurrentUser } from '../decorators/current-user.decorator';
+import { UserRole } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { RequestContextService } from '../../../common/observability/request-context.service';
 import { ApiEnvelope } from '@classpod/shared';
@@ -125,6 +129,55 @@ export class AuthController {
 
     return {
       data: userProfile,
+      meta: {
+        requestId: context?.requestId ?? '',
+        correlationId: context?.correlationId ?? '',
+      },
+    };
+  }
+
+  @Post('device/register')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async registerDevice(
+    @CurrentUser() user: any,
+    @Body() dto: RegisterDeviceDto,
+    @Req() request: Request,
+  ): Promise<ApiEnvelope<any>> {
+    const userAgent = request.headers['user-agent'] || '';
+    const result = await this.authService.registerDevice(user.id, dto, userAgent);
+    const context = this.requestContextService.getContext();
+    return {
+      data: result,
+      meta: {
+        requestId: context?.requestId ?? '',
+        correlationId: context?.correlationId ?? '',
+      },
+    };
+  }
+
+  @Get('device')
+  @UseGuards(JwtAuthGuard)
+  async getDevice(@CurrentUser() user: any): Promise<ApiEnvelope<any>> {
+    const device = await this.authService.getRegisteredDevice(user.id);
+    const context = this.requestContextService.getContext();
+    return {
+      data: { registered: !!device, device },
+      meta: {
+        requestId: context?.requestId ?? '',
+        correlationId: context?.correlationId ?? '',
+      },
+    };
+  }
+
+  @Delete('device/:userId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminResetDevice(@Param('userId') userId: string): Promise<ApiEnvelope<any>> {
+    const result = await this.authService.adminResetDevice(userId);
+    const context = this.requestContextService.getContext();
+    return {
+      data: result,
       meta: {
         requestId: context?.requestId ?? '',
         correlationId: context?.correlationId ?? '',

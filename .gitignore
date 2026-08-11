@@ -18,4 +18,9 @@ __pycache__/
 Dockerfile.local
 apps/gateway/firmware/.pio/
 firstmate/
+*.jks
+*.keystore
+keystore.properties
+*.apk
+*.aab
 

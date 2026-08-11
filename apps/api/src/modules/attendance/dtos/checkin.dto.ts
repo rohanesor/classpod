@@ -1,14 +1,23 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsNumber } from 'class-validator';
 
 export class CheckinDto {
   @IsString()
   sessionId!: string;
 
   @IsString()
-  @IsOptional()
-  gatewayId?: string;
+  gatewayId!: string;
 
   @IsString()
+  challengeToken!: string;
+
+  @IsString()
+  deviceId!: string;
+
+  @IsBoolean()
   @IsOptional()
-  challengeToken?: string;
+  isMobileApp?: boolean;
+
+  @IsNumber()
+  @IsOptional()
+  bleRssi?: number;
 }

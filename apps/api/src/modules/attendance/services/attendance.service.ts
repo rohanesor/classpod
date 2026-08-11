@@ -253,20 +253,34 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Session is closed or expired');
     }
 
-    // Validate BLE tokens if provided
-    if (dto.gatewayId || dto.challengeToken) {
-      if (!dto.gatewayId || !dto.challengeToken) {
-        throw new BadRequestException('Both gatewayId and challengeToken must be provided for BLE verification');
-      }
-      if (session.challengeToken !== dto.challengeToken) {
-        throw new BadRequestException('Invalid BLE challenge token');
-      }
-      const gateway = await this.prisma.gateway.findUnique({
-        where: { id: dto.gatewayId },
-      });
-      if (!gateway) {
-        throw new BadRequestException('Invalid gateway ID');
-      }
+    // 1. Enforce Mobile App requirement
+    if (!dto.isMobileApp) {
+      throw new BadRequestException('ClassPod attendance requires the mobile app because BLE proximity verification is required.');
+    }
+
+    // 2. Enforce Device Registration & Binding
+    const registeredDevice = await this.prisma.registeredDevice.findUnique({
+      where: { userId: studentId },
+    });
+
+    if (!registeredDevice || registeredDevice.deviceId !== dto.deviceId) {
+      throw new BadRequestException('Device not registered for this account.');
+    }
+
+    // 3. Mandatory BLE Challenge Token & Gateway Proximity Verification
+    if (!dto.gatewayId || !dto.challengeToken) {
+      throw new BadRequestException('BLE proximity verification failed. Please move closer to the ClassPod gateway.');
+    }
+
+    if (session.challengeToken !== dto.challengeToken) {
+      throw new BadRequestException('BLE proximity verification failed. Please move closer to the ClassPod gateway.');
+    }
+
+    const gateway = await this.prisma.gateway.findUnique({
+      where: { id: dto.gatewayId },
+    });
+    if (!gateway) {
+      throw new BadRequestException('BLE proximity verification failed. Please move closer to the ClassPod gateway.');
     }
 
     // Find student decision.

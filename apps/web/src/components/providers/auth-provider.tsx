@@ -102,7 +102,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       await apiClient.post('/auth/logout');
-    } finally {
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem('classpod_auth_token');
       }
@@ -110,6 +109,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsAuthenticated(false);
       setIsLoading(false);
       router.push('/login');
+    } catch (err: any) {
+      setIsLoading(false);
+      const message = err?.message || 'Logout is disabled while attendance is in progress.';
+      if (typeof window !== 'undefined') {
+        window.alert(message);
+      }
     }
   }, [router]);
 

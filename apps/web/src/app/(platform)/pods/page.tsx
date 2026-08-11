@@ -15,6 +15,7 @@ import {
   BookOpen,
   Loader2,
   AlertCircle,
+  AlertTriangle,
   Copy,
   Check,
   Calendar,
@@ -1714,16 +1715,18 @@ export default function PodsPage() {
                         <X className="h-3.5 w-3.5 mr-1" />
                         <span>Cancel Analysis</span>
                       </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => cameraFlow.skipToSession()}
-                        className="text-xs"
-                      >
-                        <PlayCircle className="h-3.5 w-3.5 mr-1" />
-                        <span>Skip to Session (Manual)</span>
-                      </Button>
+                      {process.env.NODE_ENV === 'development' && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => cameraFlow.skipToSession()}
+                          className="text-xs"
+                        >
+                          <PlayCircle className="h-3.5 w-3.5 mr-1" />
+                          <span>Skip to Session (Manual Dev)</span>
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -2048,6 +2051,19 @@ export default function PodsPage() {
                       </p>
                     </div>
                   </div>
+
+                  {/* Explicit PROXY RISK DETECTED Warning Banner */}
+                  {(attendanceSession.latestAiObservation?.difference ?? 0) < 0 && (
+                    <div className="p-4 rounded-xl border border-red-500/40 bg-red-500/10 text-red-400 space-y-1.5 animate-in fade-in duration-300">
+                      <div className="flex items-center gap-2 font-bold text-sm">
+                        <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
+                        <span>⚠ PROXY RISK DETECTED</span>
+                      </div>
+                      <p className="text-xs text-red-300/90 pl-7">
+                        Reason: Expected classroom presence does not match verified attendance signals. Physical camera headcount is less than expected enrollment.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Latest Camera Frame Thumbnail */}
                   {attendanceSession.latestAiObservation?.image && (
