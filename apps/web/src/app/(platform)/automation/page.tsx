@@ -120,20 +120,37 @@ export default function AutomationHistoryPage() {
   const handleDownloadArtifact = async (artifact: AutomationArtifact) => {
     try {
       const url = getArtifactUrl(artifact);
+      const token = typeof window !== 'undefined' ? window.localStorage.getItem('classpod_auth_token') : null;
 
-      // On Android WebView / Mobile Browsers, URL.createObjectURL(blob) is blocked or silent.
-      // Opening the authenticated ?token= download URL triggers instant Android OS Download Manager download.
-      if (typeof window !== 'undefined') {
-        const link = document.createElement('a');
-        link.href = url;
-        link.target = '_blank';
-        link.download = artifact.filename || `report.${artifact.type === 'EXCEL_REPORT' ? 'xlsx' : 'pdf'}`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
+      // 1. Fetch file blob from backend
+      const response = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (!response.ok) {
+        // Fallback to direct navigation if fetch response is not ok
+        window.open(url, '_blank');
+        return;
       }
-    } catch (err: any) {
-      window.alert(err?.message || 'Failed to download file. Please try again.');
+
+      const blob = await response.blob();
+
+      // 2. Convert blob to Base64 Data URL (100% supported by Android WebView & Chrome Mobile)
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result as string;
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = artifact.filename || `report_${artifact.id.slice(0, 6)}.${artifact.type === 'EXCEL_REPORT' ? 'xlsx' : artifact.type === 'PDF_REPORT' ? 'pdf' : 'txt'}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      };
+      reader.readAsDataURL(blob);
+    } catch {
+      // Fallback to direct URL window open
+      const url = getArtifactUrl(artifact);
+      window.open(url, '_blank');
     }
   };
 
