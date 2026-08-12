@@ -6,33 +6,39 @@ target_path = sys.argv[1] if len(sys.argv) > 1 else 'node_modules/@capacitor-com
 with open(target_path, 'r', encoding='utf-8') as f:
     code = f.read()
 
-# 1. Replace call.reject(...) with call.error(...)
-code = re.sub(r'call\.reject\(', 'call.error(', code)
+# 1. Clean up any leftover helper extensions or error calls
+code = re.sub(r'extension CAPPluginCall \{[\s\S]*?\}', '', code)
+code = re.sub(r'call\.error\(', 'call.reject(', code)
 
-# 2. Fix bridge?.viewController (removed in Capacitor 8)
+# 2. Replace call.reject(arg) with call.reject(arg, nil, nil, nil)
+code = re.sub(r'call\.reject\(([^\n,\)]+)\)', r'call.reject(\1, nil, nil, nil)', code)
+
+# 3. Fix bridge?.viewController (removed in Capacitor 8)
 code = code.replace('self.bridge?.viewController', 'nil')
 
-# 3. Fix getConfig().getObject("displayStrings")
+# 4. Fix getConfig().getObject("displayStrings")
 code = re.sub(r'let configDisplayStrings = [^\n]+', 'let configDisplayStrings = [String: String]()', code)
 
-# 4. Fix getArray with String.self or options dictionary
+# 5. Fix getArray calls to use options dictionary
 code = code.replace('call.getArray("services", String.self)', '(call.options["services"] as? [String])')
 code = code.replace('call.getArray("deviceIds", String.self)', '(call.options["deviceIds"] as? [String])')
 code = code.replace('guard let services = (call.getArray("services") as? [String]) else {', 'guard let services = (call.options["services"] as? [String]) else {')
-code = code.replace('guard let manufacturerDataArray = call.getArray("manufacturerData") else {', 'guard let manufacturerDataArray = (call.options["manufacturerData"] as? [JSObject]) else {')
+code = re.sub(r'guard let manufacturerDataArray = call\.getArray\("manufacturerData"\) else \{', 'guard let manufacturerDataArray = (call.options["manufacturerData"] as? [JSObject]) else {', code)
+code = re.sub(r'guard let serviceDataArray = call\.getArray\("serviceData"\) else \{', 'guard let serviceDataArray = (call.options["serviceData"] as? [JSObject]) else {', code)
 
-# 5. Fix getBool and getInt calls to use options
+# 6. Fix getBool and getDouble calls to use options dictionary
 code = code.replace('call.getBool("skipDescriptorDiscovery") ?? false', '(call.options["skipDescriptorDiscovery"] as? Bool) ?? false')
 code = code.replace('call.getBool("allowDuplicates") ?? false', '(call.options["allowDuplicates"] as? Bool) ?? false')
+code = re.sub(r'guard let timeout = call\.getDouble\("timeout"\) else \{', 'guard let timeout = (call.options["timeout"] as? Double) ?? (call.options["timeout"] as? Int).map(Double.init) else {', code)
 code = re.sub(r'call\.getInt\("timeout"\)', '(call.options["timeout"] as? Double) ?? 5.0', code)
 
-# 6. Fix call.getString("key") -> (call.options["key"] as? String)
+# 7. Fix call.getString("key") -> (call.options["key"] as? String)
+code = re.sub(r'guard let ([a-zA-Z0-9_]+) = call\.getStringHelper\("([^"]+)"\) else \{', r'guard let \1 = (call.options["\2"] as? String), !\1.isEmpty else {', code)
 code = re.sub(r'guard let ([a-zA-Z0-9_]+) = call\.getString\("([^"]+)"\) else \{', r'guard let \1 = (call.options["\2"] as? String), !\1.isEmpty else {', code)
+code = re.sub(r'let ([a-zA-Z0-9_]+) = call\.getStringHelper\("([^"]+)"\)', r'let \1 = (call.options["\2"] as? String) ?? ""', code)
 code = re.sub(r'let ([a-zA-Z0-9_]+) = call\.getString\("([^"]+)"\)', r'let \1 = (call.options["\2"] as? String) ?? ""', code)
+code = re.sub(r'call\.getStringHelper\("([^"]+)"\)', r'(call.options["\1"] as? String)', code)
 code = re.sub(r'call\.getString\("([^"]+)"\)', r'(call.options["\1"] as? String)', code)
-
-# Clean up any leftover helper extensions
-code = re.sub(r'extension CAPPluginCall \{[\s\S]*?\}', '', code)
 
 with open(target_path, 'w', encoding='utf-8') as f:
     f.write(code)
