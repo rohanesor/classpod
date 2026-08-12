@@ -1,4 +1,4 @@
-import { Controller, Get, Res, StreamableFile, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Res, StreamableFile } from '@nestjs/common';
 import { Response } from 'express';
 import { createReadStream, existsSync } from 'fs';
 import { join } from 'path';
