@@ -10,8 +10,8 @@ with open(target_path, 'r', encoding='utf-8') as f:
 code = re.sub(r'extension CAPPluginCall \{[\s\S]*?\}', '', code)
 code = re.sub(r'call\.error\(', 'call.reject(', code)
 
-# 2. Replace call.reject(arg) with call.reject(arg, nil, nil, nil)
-code = re.sub(r'call\.reject\(([^\n,\)]+)\)', r'call.reject(\1, nil, nil, nil)', code)
+# 2. Replace call.reject(...) with call.reject(..., code: nil, error: nil, data: nil)
+code = re.sub(r'call\.reject\(([^\n,\)]+)(?:,\s*nil,\s*nil,\s*nil)?\)', r'call.reject(\1, code: nil, error: nil, data: nil)', code)
 
 # 3. Fix bridge?.viewController (removed in Capacitor 8)
 code = code.replace('self.bridge?.viewController', 'nil')
