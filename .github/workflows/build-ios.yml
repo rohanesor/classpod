@@ -49,9 +49,8 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild.log || (echo "=== XCODEBUILD ERROR LOG ===" && tail -n 100 xcodebuild.log && exit 1)
+            CODE_SIGN_IDENTITY="-" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES 2>&1 | tee xcodebuild.log || (echo "=== XCODEBUILD ERROR LOG ===" && tail -n 100 xcodebuild.log && exit 1)
 
       - name: Package App into IPA
         run: |
