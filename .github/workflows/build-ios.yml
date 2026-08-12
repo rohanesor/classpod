@@ -31,17 +31,12 @@ jobs:
       - name: Build Next.js Web Static Export
         run: npm run build --workspace=@classpod/web
 
-      - name: Sync Capacitor iOS & Fix SPM Paths
+      - name: Setup Local Workspace Modules & Sync Capacitor
         run: |
           cd apps/web
+          mkdir -p node_modules/@capacitor-community
+          cp -r ../../node_modules/@capacitor-community/bluetooth-le node_modules/@capacitor-community/
           npx cap sync ios
-          # Fix monorepo root path for BluetoothLe in SPM Package.swift
-          sed -i '' 's|path: ".*@capacitor-community.*"|path: "../../../../node_modules/@capacitor-community/bluetooth-le"|g' ios/App/CapApp-SPM/Package.swift || true
-
-      - name: Resolve Swift Packages
-        run: |
-          cd apps/web/ios/App
-          xcodebuild -resolvePackageDependencies -project App.xcodeproj -scheme App
 
       - name: Build & Archive iOS App with Xcode
         run: |
