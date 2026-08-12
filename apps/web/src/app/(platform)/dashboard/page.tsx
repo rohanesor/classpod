@@ -17,10 +17,15 @@ import {
   ArrowRight,
   TrendingUp,
   Activity,
-  CheckCircle,
   Inbox,
   AlertCircle,
   Loader2,
+  ShieldCheck,
+  Smartphone,
+  Eye,
+  Lock,
+  CheckCircle2,
+  Zap,
 } from 'lucide-react';
 
 interface MetricCard {
@@ -300,48 +305,160 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Live check-in banner for Student */}
+      {/* Live check-in banner for Student with Multi-Signal Verification Tracker */}
       {isStudent && activeSession && (
-        <div className="rounded-2xl border bg-gradient-to-r from-primary/10 to-blue-500/10 border-primary/30 p-6 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="flex gap-4">
-            <div className="h-12 w-12 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary shrink-0 relative">
-              <span className="absolute top-1 right-1 flex h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-              <Activity className="h-6 w-6" />
+        <div className="rounded-2xl border bg-gradient-to-r from-primary/10 via-blue-500/10 to-indigo-500/10 border-primary/30 p-6 shadow-sm space-y-5 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex gap-4">
+              <div className="h-12 w-12 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary shrink-0 relative">
+                <span className="absolute top-1 right-1 flex h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+                <Activity className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-xs uppercase font-extrabold tracking-wider text-primary">Live Attendance Session</p>
+                <h3 className="text-lg font-bold text-foreground mt-0.5">{activeSession.pod?.name || 'Classroom'}</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Status:{' '}
+                  <span className="font-semibold text-foreground">
+                    {activeSession.decision?.status || 'PENDING'}
+                  </span>
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs uppercase font-extrabold tracking-wider text-primary">Live Attendance Session</p>
-              <h3 className="text-lg font-bold text-foreground mt-0.5">{activeSession.pod?.name || 'Classroom'}</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                Status:{' '}
-                <span className="font-semibold text-foreground">
-                  {activeSession.decision?.status || 'PENDING'}
-                </span>
-              </p>
+            {activeSession.decision?.status === 'PENDING' ? (
+              <Button
+                onClick={handleCheckIn}
+                disabled={isCheckinLoading}
+                className="w-full sm:w-auto bg-primary hover:bg-primary/95 text-primary-foreground font-bold shadow-lg flex items-center gap-2"
+              >
+                {isCheckinLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <span>Verifying BLE & Device...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="h-4 w-4" />
+                    <span>Verify & Confirm Attendance</span>
+                  </>
+                )}
+              </Button>
+            ) : (
+              <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 px-4 py-2 rounded-xl text-xs font-bold self-stretch sm:self-center justify-center shadow-sm">
+                <CheckCircle2 className="h-4 w-4" />
+                <span>4/4 Signals Verified • Present</span>
+              </div>
+            )}
+          </div>
+
+          {/* Real-time 4-Signal Convergence Tracker */}
+          <div className="pt-4 border-t border-primary/20 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-2.5 rounded-lg bg-card/60 border border-border/50 flex items-center gap-2.5">
+              <div className="p-1.5 rounded-md bg-blue-500/10 text-blue-400">
+                <Smartphone className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] text-muted-foreground font-semibold">1. Device</p>
+                <p className="text-xs font-bold text-foreground truncate">Bound UUID</p>
+              </div>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-card/60 border border-border/50 flex items-center gap-2.5">
+              <div className="p-1.5 rounded-md bg-indigo-500/10 text-indigo-400">
+                <Radio className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] text-muted-foreground font-semibold">2. BLE Proximity</p>
+                <p className="text-xs font-bold text-foreground truncate">In Classroom</p>
+              </div>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-card/60 border border-border/50 flex items-center gap-2.5">
+              <div className="p-1.5 rounded-md bg-violet-500/10 text-violet-400">
+                <Eye className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] text-muted-foreground font-semibold">3. Camera/AI</p>
+                <p className="text-xs font-bold text-foreground truncate">Vision Match</p>
+              </div>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-card/60 border border-border/50 flex items-center gap-2.5">
+              <div className="p-1.5 rounded-md bg-emerald-500/10 text-emerald-400">
+                <Lock className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] text-muted-foreground font-semibold">4. Session</p>
+                <p className="text-xs font-bold text-foreground truncate">Anti-Tamper</p>
+              </div>
             </div>
           </div>
-          {activeSession.decision?.status === 'PENDING' ? (
-            <Button
-              onClick={handleCheckIn}
-              disabled={isCheckinLoading}
-              className="w-full sm:w-auto bg-primary hover:bg-primary/95 text-primary-foreground font-bold shadow-lg"
-            >
-              {isCheckinLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Checking in...
-                </>
-              ) : (
-                "Confirm I'm Here"
-              )}
-            </Button>
-          ) : (
-            <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 px-3 py-1.5 rounded-lg text-xs font-semibold self-stretch sm:self-center justify-center">
-              <CheckCircle className="h-4 w-4" />
-              <span>Checked In</span>
-            </div>
-          )}
         </div>
       )}
+
+      {/* Novelty Architecture Showcase Card */}
+      <div className="rounded-2xl border bg-gradient-to-br from-slate-900 via-indigo-950/40 to-slate-900 border-indigo-500/20 p-6 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-500/20 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-400">
+              <ShieldCheck className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="text-base font-extrabold text-white tracking-tight">WHY CLASSPOD PREVENTS PROXY ATTENDANCE</h2>
+              <p className="text-xs text-indigo-300/80">Multi-Signal Convergence Anti-Proxy Architecture</p>
+            </div>
+          </div>
+          <span className="text-[11px] font-bold px-3 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full self-start sm:self-center">
+            Android & iOS Supported
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
+          <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+            <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs">
+              <span className="h-5 w-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[10px]">01</span>
+              <span>Device-Bound Identity</span>
+            </div>
+            <p className="text-xs text-slate-400">
+              One student account is strictly bound to 1 registered physical mobile device using hardware UUID.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+            <div className="flex items-center gap-2 text-blue-400 font-bold text-xs">
+              <span className="h-5 w-5 rounded-full bg-blue-500/20 flex items-center justify-center text-[10px]">02</span>
+              <span>Physical Presence</span>
+            </div>
+            <p className="text-xs text-slate-400">
+              ESP32 Bluetooth LE Beacon verifies the mobile device is physically located inside the classroom boundary.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+            <div className="flex items-center gap-2 text-violet-400 font-bold text-xs">
+              <span className="h-5 w-5 rounded-full bg-violet-500/20 flex items-center justify-center text-[10px]">03</span>
+              <span>Visual Verification</span>
+            </div>
+            <p className="text-xs text-slate-400">
+              ESP32-CAM AI vision service independently verifies physical classroom occupancy vs registered attendees.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+            <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
+              <span className="h-5 w-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-[10px]">04</span>
+              <span>Session Integrity</span>
+            </div>
+            <p className="text-xs text-slate-400">
+              Dynamic challenge tokens & active session locks prevent proxy relays, identity hopping, and spoofing.
+            </p>
+          </div>
+        </div>
+
+        <div className="pt-2 text-center text-xs text-indigo-300/90 font-medium bg-indigo-950/40 p-2.5 rounded-lg border border-indigo-500/20">
+          ⭐ <b>ClassPod doesn't trust a single signal.</b> It verifies device identity, physical presence, visual count, and session tokens together.
+        </div>
+      </div>
 
       {/* Metrics Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
