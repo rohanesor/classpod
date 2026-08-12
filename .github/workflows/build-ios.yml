@@ -22,9 +22,6 @@ jobs:
           node-version: 22
           cache: 'npm'
 
-      - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app || sudo xcode-select -s /Applications/Xcode.app
-
       - name: Install Dependencies
         run: npm ci
 
@@ -39,6 +36,11 @@ jobs:
           cd apps/web
           npx cap sync ios
 
+      - name: Resolve Swift Packages
+        run: |
+          cd apps/web/ios/App
+          xcodebuild -resolvePackageDependencies -project App.xcodeproj -scheme App
+
       - name: Build iOS App with Xcode
         run: |
           cd apps/web/ios/App
@@ -46,18 +48,19 @@ jobs:
             -project App.xcodeproj \
             -scheme App \
             -configuration Release \
-            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
             -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
 
       - name: Package App into IPA
         run: |
           cd apps/web/ios/App/build
           mkdir -p Payload
           cp -r Build/Products/Release-iphoneos/App.app Payload/
-          zip -r ClassPod.ipa Payload
+          zip -r -q ClassPod.ipa Payload
           echo "ClassPod.ipa created successfully!"
           ls -la ClassPod.ipa
 
