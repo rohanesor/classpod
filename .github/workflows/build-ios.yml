@@ -31,26 +31,27 @@ jobs:
       - name: Build Next.js Web Static Export
         run: npm run build --workspace=@classpod/web
 
-      - name: Sync Capacitor iOS
+      - name: Sync Capacitor iOS & Fix SPM Paths
         run: |
           cd apps/web
           npx cap sync ios
+          # Fix monorepo root path for BluetoothLe in SPM Package.swift
+          sed -i '' 's|path: ".*@capacitor-community.*"|path: "../../../../node_modules/@capacitor-community/bluetooth-le"|g' ios/App/CapApp-SPM/Package.swift || true
 
       - name: Resolve Swift Packages
         run: |
           cd apps/web/ios/App
           xcodebuild -resolvePackageDependencies -project App.xcodeproj -scheme App
 
-      - name: Build iOS App with Xcode
+      - name: Build & Archive iOS App with Xcode
         run: |
           cd apps/web/ios/App
-          sed -i '' 's|path: ".*@capacitor-community.*"|path: "../../../../node_modules/@capacitor-community/bluetooth-le"|g' CapApp-SPM/Package.swift || true
-          xcodebuild \
+          xcodebuild archive \
             -project App.xcodeproj \
             -scheme App \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -derivedDataPath build \
+            -archivePath build/App.xcarchive \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
@@ -60,10 +61,10 @@ jobs:
         run: |
           cd apps/web/ios/App/build
           mkdir -p Payload
-          cp -r Build/Products/Release-iphoneos/App.app Payload/
+          cp -r App.xcarchive/Products/Applications/App.app Payload/
           zip -r -q ClassPod.ipa Payload
           echo "ClassPod.ipa created successfully!"
-          ls -la ClassPod.ipa
+          ls -lh ClassPod.ipa
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
