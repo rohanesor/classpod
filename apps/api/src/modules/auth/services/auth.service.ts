@@ -254,4 +254,18 @@ export class AuthService {
 
     return { message: `Device un-bound successfully for user ${userId}` };
   }
+
+  async updateProfile(userId: string, data: { name?: string; phone?: string }) {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(data.name ? { name: data.name } : {}),
+        ...(data.phone !== undefined ? { phone: data.phone } : {}),
+      },
+    });
+
+    const profile = { ...updated };
+    delete (profile as any).passwordHash;
+    return profile;
+  }
 }

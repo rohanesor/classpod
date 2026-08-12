@@ -110,6 +110,29 @@ export default function AutomationHistoryPage() {
     }
   };
 
+  const handleTestWhatsApp = async () => {
+    setActionLoading('test_whatsapp');
+    setMessage(null);
+    try {
+      const res: any = await apiClient.post('/automation/test-whatsapp');
+      if (res?.data?.success || res?.success) {
+        setMessage({
+          type: 'success',
+          text: 'WhatsApp test notification delivered to your registered phone number (+916380221196)! Check WhatsApp.',
+        });
+      } else {
+        setMessage({
+          type: 'error',
+          text: res?.data?.message || res?.message || 'Failed to send WhatsApp test message.',
+        });
+      }
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err?.message || 'Failed to send WhatsApp test message.' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const getArtifactUrl = (artifact: AutomationArtifact) => {
     const baseUrl = getApiBaseUrl();
     const cleanBase = baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}/api`;
@@ -173,10 +196,26 @@ export default function AutomationHistoryPage() {
             Automated Excel, PDF, Summary generation and WhatsApp dispatch upon attendance completion.
           </p>
         </div>
-        <Button onClick={fetchHistory} variant="secondary" size="sm" className="gap-2 self-start md:self-auto">
-          <RefreshCw className="h-4 w-4" />
-          <span>Refresh History</span>
-        </Button>
+        <div className="flex items-center gap-2 self-start md:self-auto">
+          <Button
+            onClick={handleTestWhatsApp}
+            disabled={actionLoading === 'test_whatsapp'}
+            variant="secondary"
+            size="sm"
+            className="gap-2 border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10"
+          >
+            {actionLoading === 'test_whatsapp' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+            <span>Test WhatsApp</span>
+          </Button>
+          <Button onClick={fetchHistory} variant="secondary" size="sm" className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            <span>Refresh History</span>
+          </Button>
+        </div>
       </div>
 
       {/* Alert Message */}

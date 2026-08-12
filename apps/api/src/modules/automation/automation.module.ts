@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
+import { ConfigModule } from '@nestjs/config';
 import { QUEUE_NAMES } from '@/common/queues/queue-names';
 import { StorageModule } from '@/common/storage/storage.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { WHATSAPP_PROVIDER } from './interfaces/whatsapp-provider.interface';
-import { MockWhatsAppProvider } from './providers/mock-whatsapp.provider';
+import { TwilioWhatsAppProvider } from './providers/twilio-whatsapp.provider';
 import { ExcelGeneratorService } from './services/excel-generator.service';
 import { PdfGeneratorService } from './services/pdf-generator.service';
 import { SummaryGeneratorService } from './services/summary-generator.service';
@@ -18,11 +19,12 @@ import { AutomationController } from './controllers/automation.controller';
     BullModule.registerQueue({ name: QUEUE_NAMES.AUTOMATION }),
     StorageModule,
     AuthModule,
+    ConfigModule,
   ],
   providers: [
     {
       provide: WHATSAPP_PROVIDER,
-      useClass: MockWhatsAppProvider,
+      useClass: TwilioWhatsAppProvider,
     },
     ExcelGeneratorService,
     PdfGeneratorService,

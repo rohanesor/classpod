@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Delete, Param, Req, Res, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Patch, Body, Get, Delete, Param, Req, Res, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { AuthService } from '../services/auth.service';
 import { LoginDto } from '../dtos/login.dto';
@@ -129,6 +129,23 @@ export class AuthController {
 
     return {
       data: userProfile,
+      meta: {
+        requestId: context?.requestId ?? '',
+        correlationId: context?.correlationId ?? '',
+      },
+    };
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  async updateProfile(
+    @CurrentUser() user: any,
+    @Body() body: { name?: string; phone?: string },
+  ): Promise<ApiEnvelope<any>> {
+    const updated = await this.authService.updateProfile(user.id, body);
+    const context = this.requestContextService.getContext();
+    return {
+      data: updated,
       meta: {
         requestId: context?.requestId ?? '',
         correlationId: context?.correlationId ?? '',

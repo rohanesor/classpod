@@ -271,4 +271,30 @@ export class AutomationService {
       buffer: null,
     };
   }
+
+  async testWhatsApp(teacherId: string, customPhone?: string) {
+    const teacher = await this.prisma.user.findUnique({
+      where: { id: teacherId },
+    });
+
+    const targetPhone = customPhone || teacher?.phone || undefined;
+
+    const result = await this.whatsappProvider.sendAttendanceReport({
+      toPhoneNumber: targetPhone,
+      teacherName: teacher?.name || 'ClassPod Instructor',
+      podName: 'Demo ClassPod',
+      messageBody: 'Hello! This is a test WhatsApp message from the ClassPod automated attendance system. Everything is configured and working perfectly! 🚀',
+      attachments: [],
+      sessionId: 'test_session_' + Date.now(),
+      automationRunId: 'test_run_' + Date.now(),
+    });
+
+    return {
+      success: result.success,
+      message: result.success ? 'WhatsApp test notification sent successfully!' : 'Failed to send WhatsApp message',
+      messageId: result.messageId,
+      provider: result.provider,
+      recipient: targetPhone || 'Default configured number (+916380221196)',
+    };
+  }
 }

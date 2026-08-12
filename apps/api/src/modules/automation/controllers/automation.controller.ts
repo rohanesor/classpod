@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Body,
   Param,
   Query,
   Res,
@@ -51,6 +52,15 @@ export class AutomationController {
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
   async resendWhatsApp(@Param('id') id: string, @CurrentUser() user: User) {
     return this.automationService.resendWhatsApp(id, user.id);
+  }
+
+  @Post('test-whatsapp')
+  @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  async testWhatsApp(
+    @CurrentUser() user: User,
+    @Body('phone') phone?: string
+  ) {
+    return this.automationService.testWhatsApp(user.id, phone);
   }
 
   // Download endpoint for file artifacts

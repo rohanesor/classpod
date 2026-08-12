@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
+import { apiClient } from '@/lib/api-client';
 import {
   User,
   Mail,
@@ -17,6 +18,11 @@ import {
   Target,
   AlertTriangle,
   Loader2,
+  Phone,
+  MessageSquare,
+  Send,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -24,6 +30,54 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  // WhatsApp & Phone State
+  const [phone, setPhone] = useState(user?.phone || '+916380221196');
+  const [savingPhone, setSavingPhone] = useState(false);
+  const [testingWhatsApp, setTestingWhatsApp] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (user?.phone) {
+      setPhone(user.phone);
+    }
+  }, [user?.phone]);
+
+  const handleSavePhone = async () => {
+    setSavingPhone(true);
+    setFeedback(null);
+    try {
+      await apiClient.patch('/auth/profile', { phone });
+      setFeedback({ type: 'success', text: 'WhatsApp phone number saved successfully!' });
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err?.message || 'Failed to update phone number.' });
+    } finally {
+      setSavingPhone(false);
+    }
+  };
+
+  const handleTestWhatsApp = async () => {
+    setTestingWhatsApp(true);
+    setFeedback(null);
+    try {
+      const res: any = await apiClient.post('/automation/test-whatsapp', { phone });
+      if (res?.data?.success || res?.success) {
+        setFeedback({
+          type: 'success',
+          text: `WhatsApp test notification delivered to ${phone}! Check your phone.`,
+        });
+      } else {
+        setFeedback({
+          type: 'error',
+          text: res?.data?.message || res?.message || 'Failed to send WhatsApp message.',
+        });
+      }
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err?.message || 'Failed to send WhatsApp test.' });
+    } finally {
+      setTestingWhatsApp(false);
+    }
+  };
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -44,9 +98,32 @@ export default function SettingsPage() {
           Settings
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Manage your user profile details, theme settings, and account options.
+          Manage your user profile details, WhatsApp automation alerts, and theme preferences.
         </p>
       </div>
+
+      {/* Alert Feedback Banner */}
+      {feedback && (
+        <div
+          className={`flex items-center justify-between p-4 rounded-xl border text-xs font-semibold animate-in fade-in duration-200 ${
+            feedback.type === 'success'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600'
+              : 'bg-destructive/10 border-destructive/30 text-destructive'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {feedback.type === 'success' ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+            ) : (
+              <AlertCircle className="h-4 w-4 shrink-0" />
+            )}
+            <span>{feedback.text}</span>
+          </div>
+          <button onClick={() => setFeedback(null)} className="opacity-70 hover:opacity-100 font-bold ml-2">
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Profile Section */}
       <div className="rounded-xl border bg-card p-6 shadow-sm space-y-6">
@@ -86,7 +163,66 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Onboarding Preferences (If saved during signup) */}
+      {/* WhatsApp Automation & Reports Section */}
+      <div className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
+        <div className="flex items-center gap-2 border-b pb-2">
+          <MessageSquare className="h-5 w-5 text-emerald-500" />
+          <h3 className="text-lg font-bold">WhatsApp Automation & Reports</h3>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          When an attendance session completes, ClassPod automatically generates Excel/PDF reports and sends a real-time summary to your WhatsApp.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+          <div className="md:col-span-2 space-y-2">
+            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <Phone className="h-3.5 w-3.5 text-emerald-600" />
+              <span>WhatsApp Phone Number (with country code)</span>
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+916380221196"
+                className="flex-1 px-3 py-2 text-sm rounded-lg border bg-background text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <Button
+                onClick={handleSavePhone}
+                disabled={savingPhone}
+                variant="default"
+                size="sm"
+                className="gap-1.5"
+              >
+                {savingPhone ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                <span>Save</span>
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Example format: <code className="bg-muted px-1 rounded text-primary">+916380221196</code>
+            </p>
+          </div>
+
+          <div className="flex flex-col justify-end">
+            <Button
+              onClick={handleTestWhatsApp}
+              disabled={testingWhatsApp}
+              variant="secondary"
+              size="sm"
+              className="gap-2 border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 h-10 w-full"
+            >
+              {testingWhatsApp ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              <span>Send Test WhatsApp</span>
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Onboarding Preferences */}
       {((user as any)?.heardFrom || (user as any)?.onboardingReason) && (
         <div className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
           <h3 className="text-lg font-bold border-b pb-2">Onboarding Preferences</h3>
@@ -96,7 +232,7 @@ export default function SettingsPage() {
                 <HelpCircle className="h-4 w-4 text-primary shrink-0" />
                 <div>
                   <span className="text-xs text-muted-foreground block">How you found us</span>
-                  <span className="text-sm font-semibold">{ (user as any).heardFrom }</span>
+                  <span className="text-sm font-semibold">{(user as any).heardFrom}</span>
                 </div>
               </div>
             )}
@@ -105,7 +241,7 @@ export default function SettingsPage() {
                 <Target className="h-4 w-4 text-primary shrink-0" />
                 <div>
                   <span className="text-xs text-muted-foreground block">Primary Goal</span>
-                  <span className="text-sm font-semibold">{ (user as any).onboardingReason }</span>
+                  <span className="text-sm font-semibold">{(user as any).onboardingReason}</span>
                 </div>
               </div>
             )}
@@ -130,86 +266,73 @@ export default function SettingsPage() {
               <button
                 key={t.id}
                 onClick={() => setTheme(t.id)}
-                className={`flex flex-col items-center justify-center p-4 border rounded-xl bg-muted/20 hover:bg-muted/40 transition-all ${
-                  isSelected ? 'border-primary ring-1 ring-primary' : 'border-border'
+                className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all ${
+                  isSelected
+                    ? 'border-primary bg-primary/10 text-primary font-bold shadow-sm'
+                    : 'border-muted hover:border-muted-foreground/30 hover:bg-muted/50'
                 }`}
               >
-                <t.icon className={`h-5 w-5 mb-2 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
-                <span className="text-xs font-semibold">{t.label}</span>
-                {isSelected && <Check className="h-3.5 w-3.5 text-primary mt-1" />}
+                <div className="flex items-center gap-3">
+                  <t.icon className="h-4 w-4" />
+                  <span className="text-xs">{t.label}</span>
+                </div>
+                {isSelected && <Check className="h-4 w-4" />}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Account Actions & Session Management */}
-      <div className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
-        <h3 className="text-lg font-bold border-b pb-2">Account Actions</h3>
-        <p className="text-xs text-muted-foreground">
-          Sign out of your ClassPod session on this device.
-        </p>
+      {/* Account Actions / Logout Section */}
+      <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-6 shadow-sm space-y-4">
+        <div>
+          <h3 className="text-lg font-bold text-destructive">Account Management</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Sign out of your active session on this device.
+          </p>
+        </div>
 
-        {!showLogoutConfirm ? (
-          <Button
-            onClick={() => setShowLogoutConfirm(true)}
-            variant="destructive"
-            className="flex items-center gap-2 font-bold shadow-md"
-          >
-            <LogOut className="h-4 w-4" />
-            <span>Log Out</span>
-          </Button>
-        ) : (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-4 rounded-xl border border-destructive/30 bg-destructive/10 animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertTriangle className="h-5 w-5 shrink-0" />
-              <span className="text-sm font-semibold">Are you sure you want to log out?</span>
+        {showLogoutConfirm ? (
+          <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/10 space-y-3 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-2 text-destructive font-bold text-sm">
+              <AlertTriangle className="h-4 w-4" />
+              <span>Confirm Sign Out</span>
             </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">
+            <p className="text-xs text-muted-foreground">
+              Are you sure you want to log out? You will need your credentials to log back in.
+            </p>
+            <div className="flex items-center gap-2 pt-1">
               <Button
-                variant="secondary"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                variant="destructive"
                 size="sm"
+                className="gap-1.5"
+              >
+                {isLoggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                <span>Yes, Sign Out</span>
+              </Button>
+              <Button
                 onClick={() => setShowLogoutConfirm(false)}
                 disabled={isLoggingOut}
-                className="flex-1 sm:flex-initial"
+                variant="secondary"
+                size="sm"
               >
                 Cancel
               </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleLogout}
-                disabled={isLoggingOut}
-                className="flex-1 sm:flex-initial font-bold"
-              >
-                {isLoggingOut ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
-                    Logging out...
-                  </>
-                ) : (
-                  'Yes, Log Out'
-                )}
-              </Button>
             </div>
           </div>
-        )}
-      </div>
-
-      {/* Danger Zone */}
-      <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-6 shadow-sm space-y-3">
-        <div className="flex items-center gap-2 text-destructive font-bold">
-          <AlertTriangle className="h-4 w-4" />
-          <span>Danger Zone</span>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Deleting your ClassPod account will permanently remove all your attendance data and pod memberships.
-        </p>
-        <div className="pt-1">
-          <Button variant="ghost" size="sm" disabled className="text-xs text-muted-foreground border opacity-50 cursor-not-allowed">
-            Delete Account (Contact Administrator)
+        ) : (
+          <Button
+            onClick={() => setShowLogoutConfirm(true)}
+            variant="secondary"
+            size="sm"
+            className="border-destructive/30 text-destructive hover:bg-destructive hover:text-destructive-foreground gap-2"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Sign Out</span>
           </Button>
-        </div>
+        )}
       </div>
     </div>
   );

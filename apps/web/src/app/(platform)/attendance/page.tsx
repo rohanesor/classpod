@@ -20,6 +20,7 @@ import {
   Trash2,
   PlayCircle,
   Square,
+  Zap,
 } from 'lucide-react';
 
 interface AttendanceSession {
@@ -467,11 +468,26 @@ function AttendancePageBody({
                   {isTeacher && expandedSessionId === sess.id && (
                     <tr key={`${sess.id}-expanded`}>
                       <td colSpan={5} className="bg-muted/10 px-4 py-4 sm:px-6 border-b">
-                        <div className="flex items-center gap-2 mb-3">
-                          <Users className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                            Roster Decisions & Ingested Evidence
-                          </span>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-2">
+                            <Users className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                              Roster Decisions & Ingested Evidence
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <Link href="/automation">
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                className="h-7 text-[10px] font-bold gap-1 text-primary border-primary/30 hover:bg-primary/10"
+                              >
+                                <Zap className="h-3 w-3" />
+                                <span>Automation & Reports Hub</span>
+                              </Button>
+                            </Link>
+                          </div>
                         </div>
 
                         {loadingDecisions ? (

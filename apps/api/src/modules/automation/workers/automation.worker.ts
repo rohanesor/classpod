@@ -207,7 +207,9 @@ export class AutomationWorker extends WorkerHost {
 
       // Step 6: Trigger WhatsApp Provider
       this.logger.log(`[Automation] Dispatching WhatsApp message via ${this.whatsappProvider.name}...`);
+      const teacherPhone = session.teacher.phone || undefined;
       const waResult = await this.whatsappProvider.sendAttendanceReport({
+        toPhoneNumber: teacherPhone,
         teacherName: session.teacher.name,
         podName: session.pod.name,
         messageBody: textSummary,
