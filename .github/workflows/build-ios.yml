@@ -45,7 +45,7 @@ jobs:
             -project App.xcodeproj \
             -scheme App \
             -configuration Release \
-            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="" \
@@ -54,9 +54,12 @@ jobs:
 
       - name: Package App into IPA
         run: |
-          cd apps/web/ios/App/build
-          mkdir -p Payload
-          cp -r Build/Products/Release-iphoneos/App.app Payload/
+          cd apps/web/ios/App
+          mkdir -p build/Payload
+          APP_PATH=$(find build -name "App.app" -type d | head -n 1)
+          echo "Found App bundle at: $APP_PATH"
+          cp -r "$APP_PATH" build/Payload/
+          cd build
           zip -r -q ClassPod.ipa Payload
           echo "ClassPod.ipa created successfully!"
           ls -lh ClassPod.ipa
