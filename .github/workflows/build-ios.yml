@@ -38,15 +38,15 @@ jobs:
           cp -r ../../node_modules/@capacitor-community/bluetooth-le node_modules/@capacitor-community/
           npx cap sync ios
 
-      - name: Build & Archive iOS App with Xcode
+      - name: Build iOS App with Xcode
         run: |
           cd apps/web/ios/App
-          xcodebuild archive \
+          xcodebuild \
             -project App.xcodeproj \
             -scheme App \
             -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -archivePath build/App.xcarchive \
+            -sdk iphoneos \
+            -derivedDataPath build \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
@@ -56,7 +56,7 @@ jobs:
         run: |
           cd apps/web/ios/App/build
           mkdir -p Payload
-          cp -r App.xcarchive/Products/Applications/App.app Payload/
+          cp -r Build/Products/Release-iphoneos/App.app Payload/
           zip -r -q ClassPod.ipa Payload
           echo "ClassPod.ipa created successfully!"
           ls -lh ClassPod.ipa
