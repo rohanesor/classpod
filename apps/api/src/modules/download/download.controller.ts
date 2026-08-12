@@ -24,7 +24,9 @@ export class DownloadController {
     }
 
     if (!apkPath) {
-      throw new NotFoundException('ClassPod.apk is being generated. Please retry in a few seconds.');
+      // Fallback: Redirect to GitHub Release latest CDN asset
+      res.redirect(302, 'https://github.com/rohanesor/classpod/releases/latest/download/app-release.apk');
+      return undefined as any;
     }
 
     res.set({
