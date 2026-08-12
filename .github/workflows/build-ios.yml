@@ -27,17 +27,7 @@ jobs:
 
       - name: Patch BluetoothLe Plugin for Capacitor 8 Swift SPM
         run: |
-          python3 -c "
-          p = 'node_modules/@capacitor-community/bluetooth-le/ios/Sources/BluetoothLe/Plugin.swift'
-          with open(p, 'r') as f:
-              content = f.read()
-          content = content.replace('guard let service = call.getString(\"service\") else {', 'let service = call.getString(\"service\", \"\"); guard !service.isEmpty else {')
-          content = content.replace('guard let characteristic = call.getString(\"characteristic\") else {', 'let characteristic = call.getString(\"characteristic\", \"\"); guard !characteristic.isEmpty else {')
-          content = content.replace('guard let descriptor = call.getString(\"descriptor\") else {', 'let descriptor = call.getString(\"descriptor\", \"\"); guard !descriptor.isEmpty else {')
-          with open(p, 'w') as f:
-              f.write(content)
-          print('Successfully patched Plugin.swift for Capacitor 8!')
-          "
+          python3 scripts/patch_plugin.py node_modules/@capacitor-community/bluetooth-le/ios/Sources/BluetoothLe/Plugin.swift
 
       - name: Build Shared Package
         run: npm run build --workspace=@classpod/shared
@@ -50,6 +40,7 @@ jobs:
           cd apps/web
           mkdir -p node_modules/@capacitor-community
           cp -r ../../node_modules/@capacitor-community/bluetooth-le node_modules/@capacitor-community/
+          python3 ../../scripts/patch_plugin.py node_modules/@capacitor-community/bluetooth-le/ios/Sources/BluetoothLe/Plugin.swift
           npx cap sync ios
 
       - name: Build iOS App with Xcode
