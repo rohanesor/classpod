@@ -36,18 +36,28 @@ export default function DownloadPage() {
           </a>
 
           <a
+            href="https://github.com/rohanesor/classpod/releases/latest/download/ClassPod.ipa"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full py-3 px-6 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center space-x-2 transition-all transform active:scale-95"
+          >
+            <Download className="w-5 h-5" />
+            <span>Download iOS Package (.ipa)</span>
+          </a>
+
+          <a
             href="/api/download/apk"
             target="_blank"
             rel="noopener noreferrer"
             className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs rounded-xl flex items-center justify-center space-x-2 border border-slate-700 transition-colors"
           >
             <Download className="w-4 h-4 text-slate-400" />
-            <span>Alternative Direct Server Mirror</span>
+            <span>Android Direct Server Mirror</span>
           </a>
 
           <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
-            <span>Version: v2.0.0-release</span>
-            <span>Size: ~18.4 MB</span>
+            <span>Version: v2.1.0-release</span>
+            <span>Android APK & iOS IPA</span>
           </div>
         </div>
 

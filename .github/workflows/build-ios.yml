@@ -1,0 +1,79 @@
+name: Build iOS IPA
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    name: Build & Package iOS IPA
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Select Xcode Version
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app || sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Shared Package
+        run: npm run build --workspace=@classpod/shared
+
+      - name: Build Next.js Web Static Export
+        run: npm run build --workspace=@classpod/web
+
+      - name: Sync Capacitor iOS
+        run: |
+          cd apps/web
+          npx cap sync ios
+
+      - name: Build iOS App with Xcode
+        run: |
+          cd apps/web/ios/App
+          xcodebuild clean build \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Package App into IPA
+        run: |
+          cd apps/web/ios/App/build
+          mkdir -p Payload
+          cp -r Build/Products/Release-iphoneos/App.app Payload/
+          zip -r ClassPod.ipa Payload
+          echo "ClassPod.ipa created successfully!"
+          ls -la ClassPod.ipa
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: classpod-release-ipa
+          path: apps/web/ios/App/build/ClassPod.ipa
+          retention-days: 30
+
+      - name: Attach IPA to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.1.0' }}
+          files: apps/web/ios/App/build/ClassPod.ipa
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
