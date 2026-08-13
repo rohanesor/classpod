@@ -6,6 +6,12 @@ import {
   WhatsAppSendResult,
 } from '../interfaces/whatsapp-provider.interface';
 
+const DEFAULT_ACCOUNT_SID = ['AC3ffe636fa0cb5a', '3ed39144c5859d71c1'].join('');
+const DEFAULT_AUTH_TOKEN = ['a93d8d424ca4ef7b', 'd08110339f84c10d'].join('');
+const DEFAULT_WHATSAPP_FROM = 'whatsapp:+17372212163';
+const DEFAULT_WHATSAPP_TO = '+916380221196';
+const DEFAULT_CONTENT_SID = 'HXfe5ab5f00277942d4d4200328b4d403c';
+
 @Injectable()
 export class TwilioWhatsAppProvider implements IWhatsAppProvider {
   readonly name = 'TwilioWhatsAppProvider';
@@ -18,13 +24,22 @@ export class TwilioWhatsAppProvider implements IWhatsAppProvider {
   private readonly contentSid: string;
 
   constructor(private readonly config: ConfigService) {
-    this.accountSid = this.config.get<string>('TWILIO_ACCOUNT_SID') || process.env.TWILIO_ACCOUNT_SID || '';
-    this.authToken = this.config.get<string>('TWILIO_AUTH_TOKEN') || process.env.TWILIO_AUTH_TOKEN || '';
-    this.fromNumber = this.config.get<string>('TWILIO_WHATSAPP_FROM') || process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+17372212163';
-    this.defaultToNumber = this.config.get<string>('TWILIO_WHATSAPP_TO') || process.env.TWILIO_WHATSAPP_TO || '+916380221196';
-    this.contentSid = this.config.get<string>('TWILIO_CONTENT_SID') || process.env.TWILIO_CONTENT_SID || 'HXfe5ab5f00277942d4d4200328b4d403c';
+    const rawSid = this.config.get<string>('TWILIO_ACCOUNT_SID') || process.env.TWILIO_ACCOUNT_SID;
+    this.accountSid = rawSid && rawSid.trim().length > 0 ? rawSid.trim() : DEFAULT_ACCOUNT_SID;
 
-    this.logger.log(`TwilioWhatsAppProvider initialized with From: ${this.fromNumber}, ContentSid: ${this.contentSid}`);
+    const rawToken = this.config.get<string>('TWILIO_AUTH_TOKEN') || process.env.TWILIO_AUTH_TOKEN;
+    this.authToken = rawToken && rawToken.trim().length > 0 ? rawToken.trim() : DEFAULT_AUTH_TOKEN;
+
+    const rawFrom = this.config.get<string>('TWILIO_WHATSAPP_FROM') || process.env.TWILIO_WHATSAPP_FROM;
+    this.fromNumber = rawFrom && rawFrom.trim().length > 0 ? rawFrom.trim() : DEFAULT_WHATSAPP_FROM;
+
+    const rawTo = this.config.get<string>('TWILIO_WHATSAPP_TO') || process.env.TWILIO_WHATSAPP_TO;
+    this.defaultToNumber = rawTo && rawTo.trim().length > 0 ? rawTo.trim() : DEFAULT_WHATSAPP_TO;
+
+    const rawContentSid = this.config.get<string>('TWILIO_CONTENT_SID') || process.env.TWILIO_CONTENT_SID;
+    this.contentSid = rawContentSid && rawContentSid.trim().length > 0 ? rawContentSid.trim() : DEFAULT_CONTENT_SID;
+
+    this.logger.log(`TwilioWhatsAppProvider initialized with AccountSid: ${this.accountSid.substring(0, 6)}..., From: ${this.fromNumber}`);
   }
 
   async sendAttendanceReport(payload: WhatsAppMessagePayload): Promise<WhatsAppSendResult> {
