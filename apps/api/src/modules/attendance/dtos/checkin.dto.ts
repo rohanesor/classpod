@@ -20,4 +20,11 @@ export class CheckinDto {
   @IsNumber()
   @IsOptional()
   bleRssi?: number;
+
+  @IsOptional()
+  biometricAssertion?: any;
+
+  @IsBoolean()
+  @IsOptional()
+  biometricVerified?: boolean;
 }

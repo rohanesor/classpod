@@ -36,6 +36,7 @@ import {
   ShieldCheck,
   Smartphone,
   CheckCircle2,
+  Fingerprint,
 } from 'lucide-react';
 import { getInstallationUuid } from '@/lib/device-id';
 import { useAttendanceCameraFlow } from '@/hooks/use-attendance-camera-flow';
@@ -651,8 +652,9 @@ export default function PodsPage() {
     switch (normalizedStatus) {
       case 'VERIFIED':
         return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-            Verified
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+            <Fingerprint className="h-3.5 w-3.5" />
+            <span>Biometric Verified</span>
           </span>
         );
       case 'CHECKED_IN':

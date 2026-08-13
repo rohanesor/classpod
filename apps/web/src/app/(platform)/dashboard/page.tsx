@@ -21,12 +21,19 @@ import {
   FileSpreadsheet,
   Zap,
   Plus,
+  Fingerprint,
+  ShieldCheck,
+  Trash2,
 } from 'lucide-react';
+import { useBiometrics } from '@/hooks/use-biometrics';
 
 export default function HomePage() {
   const { user } = useAuth();
+  const biometrics = useBiometrics();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bioRegistering, setBioRegistering] = useState(false);
+  const [bioSuccess, setBioSuccess] = useState<string | null>(null);
 
   // Core States
   const [pods, setPods] = useState<any[]>([]);
@@ -86,6 +93,32 @@ export default function HomePage() {
     }
   }, [isStudent, user]);
 
+  // Register Fingerprint for Student
+  const handleRegisterFingerprint = async () => {
+    setBioRegistering(true);
+    setError(null);
+    setBioSuccess(null);
+    try {
+      await biometrics.registerFingerprint('Primary Student Fingerprint');
+      setBioSuccess('Fingerprint hardware ID registered and linked to your student account!');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to register fingerprint.');
+    } finally {
+      setBioRegistering(false);
+    }
+  };
+
+  const handleRemoveFingerprint = async () => {
+    setError(null);
+    setBioSuccess(null);
+    try {
+      await biometrics.removeFingerprint();
+      setBioSuccess('Fingerprint credentials removed.');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to remove fingerprint.');
+    }
+  };
+
   // Check-in handler for Student
   const handleCheckIn = async () => {
     if (!activeSession) return;
@@ -141,15 +174,34 @@ export default function HomePage() {
         }
       }
 
+      // 2. Biometric Fingerprint Verification prompt
+      let biometricAssertion: any = null;
+      let biometricVerified = false;
+
+      if (biometrics.hasFingerprint) {
+        try {
+          biometricAssertion = await biometrics.promptVerification();
+          biometricVerified = true;
+        } catch {
+          throw new Error('Fingerprint verification cancelled or failed. Please scan your registered fingerprint to check in.');
+        }
+      }
+
       await apiClient.post('/attendance/checkin', {
         sessionId,
         gatewayId,
         challengeToken,
         deviceId,
         isMobileApp: Capacitor.isNativePlatform(),
+        biometricAssertion,
+        biometricVerified,
       });
 
-      setCheckinSuccess('Attendance check-in submitted successfully!');
+      setCheckinSuccess(
+        biometricVerified
+          ? 'Attendance verified with Fingerprint & BLE Proximity! 🛡️'
+          : 'Attendance check-in submitted successfully!'
+      );
       fetchData();
     } catch (err: any) {
       setError(err?.message || 'Failed to submit check-in. Please try again.');
@@ -265,6 +317,96 @@ export default function HomePage() {
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {bioSuccess && (
+        <div className="flex items-center justify-between p-4 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 text-indigo-600 text-xs font-semibold">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 shrink-0" />
+            <span>{bioSuccess}</span>
+          </div>
+          <button
+            onClick={() => setBioSuccess(null)}
+            className="opacity-70 hover:opacity-100 font-bold ml-2"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* STUDENT BIOMETRIC FINGERPRINT REGISTRATION CARD */}
+      {isStudent && (
+        <div className="rounded-2xl border bg-card p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-2xl bg-indigo-500/10 text-indigo-600 shrink-0">
+              <Fingerprint className="h-7 w-7" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-foreground">
+                  Biometric Fingerprint Hardware ID
+                </h3>
+                {biometrics.hasFingerprint ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                    <ShieldCheck className="h-3 w-3" />
+                    Enrolled & Linked
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                    Not Registered
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed max-w-xl">
+                {biometrics.hasFingerprint
+                  ? `Your ${biometrics.primaryCredential?.fingerprintName || 'Fingerprint'} is verified on this device. During attendance, touch your sensor to complete check-in.`
+                  : 'Enroll your fingerprint once to enable instant 1-touch hardware verified attendance check-ins.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {biometrics.hasFingerprint ? (
+              <>
+                <Button
+                  onClick={handleRegisterFingerprint}
+                  disabled={bioRegistering}
+                  variant="secondary"
+                  className="h-10 px-4 font-bold text-xs gap-2"
+                >
+                  <Fingerprint className="h-3.5 w-3.5 text-indigo-500" />
+                  <span>Update Scan</span>
+                </Button>
+                <Button
+                  onClick={handleRemoveFingerprint}
+                  variant="ghost"
+                  className="h-10 px-3 font-bold text-xs text-destructive hover:bg-destructive/10"
+                  title="Remove Fingerprint"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </>
+            ) : (
+              <Button
+                onClick={handleRegisterFingerprint}
+                disabled={bioRegistering}
+                className="h-10 px-5 font-bold shadow-md gap-2 text-xs bg-indigo-600 hover:bg-indigo-700 text-white"
+              >
+                {bioRegistering ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Scanning Sensor...</span>
+                  </>
+                ) : (
+                  <>
+                    <Fingerprint className="h-4 w-4" />
+                    <span>Register Fingerprint</span>
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       )}
 

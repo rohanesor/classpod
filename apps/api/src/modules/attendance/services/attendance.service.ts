@@ -19,6 +19,7 @@ import {
 import { StartSessionDto } from '../dtos/start-session.dto';
 import { CheckinDto } from '../dtos/checkin.dto';
 import { ATTENDANCE_EVENT_NAMES, ATTENDANCE_AUDIT_ACTIONS } from '../constants/attendance-events';
+import { BiometricsService } from '../../auth/services/biometrics.service';
 
 @Injectable()
 export class AttendanceService implements OnModuleInit, OnModuleDestroy {
@@ -27,6 +28,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventLogger: EventLoggerService,
+    private readonly biometricsService: BiometricsService,
   ) {}
 
   onModuleInit() {
@@ -304,7 +306,43 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Already checked in');
     }
 
-    // Update status to CHECKED_IN.
+    // 4. Biometric Fingerprint Hardware Verification Check
+    const enrolledBiometrics = await this.prisma.biometricCredential.findMany({
+      where: { userId: studentId },
+    });
+
+    let isBiometricVerified = false;
+    let biometricMetadata: any = null;
+
+    if (enrolledBiometrics.length > 0) {
+      if (!dto.biometricAssertion && !dto.biometricVerified) {
+        throw new BadRequestException('Biometric fingerprint verification required. Please scan your registered fingerprint.');
+      }
+
+      const bioResult = await this.biometricsService.verifyBiometricAssertion(studentId, dto.biometricAssertion);
+      if (!bioResult.verified) {
+        throw new BadRequestException('Fingerprint verification failed. Scanned biometric does not match enrolled credential.');
+      }
+
+      isBiometricVerified = true;
+      biometricMetadata = {
+        credentialId: bioResult.credentialId,
+        fingerprintName: bioResult.fingerprintName,
+        verifiedAt: bioResult.verifiedAt,
+      };
+    } else if (dto.biometricAssertion || dto.biometricVerified) {
+      isBiometricVerified = true;
+      biometricMetadata = {
+        verifiedAt: new Date(),
+        fingerprintName: 'Device Biometric (Touch ID/Android)',
+      };
+    }
+
+    const nextStatus = isBiometricVerified
+      ? AttendanceDecisionStatus.VERIFIED
+      : AttendanceDecisionStatus.CHECKED_IN;
+
+    // Update status to VERIFIED or CHECKED_IN.
     const updatedDecision = await this.prisma.attendanceDecision.update({
       where: {
         sessionId_studentId: {
@@ -313,10 +351,24 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
         },
       },
       data: {
-        status: AttendanceDecisionStatus.CHECKED_IN,
+        status: nextStatus,
+        explanation: isBiometricVerified
+          ? 'Biometric fingerprint & BLE proximity verified'
+          : 'BLE proximity verified',
         respondedAt: new Date(),
       },
     });
+
+    // Record verification signal
+    if (isBiometricVerified) {
+      await this.prisma.verificationSignal.create({
+        data: {
+          attendanceDecisionId: updatedDecision.id,
+          source: 'BIOMETRIC',
+          payload: biometricMetadata || { verified: true },
+        },
+      });
+    }
 
     // Log events.
     this.eventLogger.audit(ATTENDANCE_AUDIT_ACTIONS.CHECKIN, {
@@ -325,6 +377,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       entityId: updatedDecision.id,
       sessionId: dto.sessionId,
       gatewayId: dto.gatewayId,
+      biometricVerified: isBiometricVerified,
     });
 
     this.eventLogger.event(ATTENDANCE_EVENT_NAMES.CHECKIN_REQUESTED, {
@@ -333,13 +386,14 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       decisionId: updatedDecision.id,
       gatewayId: dto.gatewayId,
       challengeToken: dto.challengeToken,
+      biometricVerified: isBiometricVerified,
     });
 
     this.eventLogger.event(ATTENDANCE_EVENT_NAMES.DECISION_CREATED, {
       sessionId: dto.sessionId,
       studentId,
       decisionId: updatedDecision.id,
-      status: AttendanceDecisionStatus.CHECKED_IN,
+      status: nextStatus,
     });
 
     return updatedDecision;

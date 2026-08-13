@@ -1,6 +1,7 @@
 import { Controller, Post, Patch, Body, Get, Delete, Param, Req, Res, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { AuthService } from '../services/auth.service';
+import { BiometricsService, BiometricRegistrationDto } from '../services/biometrics.service';
 import { LoginDto } from '../dtos/login.dto';
 import { RegisterDto } from '../dtos/register.dto';
 import { RegisterDeviceDto } from '../dtos/register-device.dto';
@@ -17,6 +18,7 @@ import { ApiEnvelope } from '@classpod/shared';
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly biometricsService: BiometricsService,
     private readonly configService: ConfigService,
     private readonly requestContextService: RequestContextService,
   ) {}
@@ -192,6 +194,68 @@ export class AuthController {
   @Roles(UserRole.ADMIN)
   async adminResetDevice(@Param('userId') userId: string): Promise<ApiEnvelope<any>> {
     const result = await this.authService.adminResetDevice(userId);
+    const context = this.requestContextService.getContext();
+    return {
+      data: result,
+      meta: {
+        requestId: context?.requestId ?? '',
+        correlationId: context?.correlationId ?? '',
+      },
+    };
+  }
+
+  // === BIOMETRICS & FINGERPRINT ENDPOINTS ===
+
+  @Get('biometrics/options')
+  @UseGuards(JwtAuthGuard)
+  async getBiometricRegistrationOptions(@CurrentUser() user: any): Promise<ApiEnvelope<any>> {
+    const options = await this.biometricsService.generateRegistrationOptions(user.id);
+    const context = this.requestContextService.getContext();
+    return {
+      data: options,
+      meta: {
+        requestId: context?.requestId ?? '',
+        correlationId: context?.correlationId ?? '',
+      },
+    };
+  }
+
+  @Post('biometrics/register')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async registerBiometrics(
+    @CurrentUser() user: any,
+    @Body() dto: BiometricRegistrationDto,
+  ): Promise<ApiEnvelope<any>> {
+    const result = await this.biometricsService.registerCredential(user.id, dto);
+    const context = this.requestContextService.getContext();
+    return {
+      data: result,
+      meta: {
+        requestId: context?.requestId ?? '',
+        correlationId: context?.correlationId ?? '',
+      },
+    };
+  }
+
+  @Get('biometrics/status')
+  @UseGuards(JwtAuthGuard)
+  async getBiometricStatus(@CurrentUser() user: any): Promise<ApiEnvelope<any>> {
+    const status = await this.biometricsService.getStatus(user.id);
+    const context = this.requestContextService.getContext();
+    return {
+      data: status,
+      meta: {
+        requestId: context?.requestId ?? '',
+        correlationId: context?.correlationId ?? '',
+      },
+    };
+  }
+
+  @Delete('biometrics')
+  @UseGuards(JwtAuthGuard)
+  async removeBiometrics(@CurrentUser() user: any): Promise<ApiEnvelope<any>> {
+    const result = await this.biometricsService.removeBiometrics(user.id);
     const context = this.requestContextService.getContext();
     return {
       data: result,

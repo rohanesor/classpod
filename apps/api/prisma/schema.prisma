@@ -34,6 +34,7 @@ model User {
   notifications       Notification[]
   automationRuns      AutomationRun[]
   registeredDevice    RegisteredDevice?
+  biometricCredentials BiometricCredential[]
 }
 
 model RegisteredDevice {
@@ -49,6 +50,22 @@ model RegisteredDevice {
 
   @@index([userId])
   @@index([deviceId])
+}
+
+model BiometricCredential {
+  id              String    @id @default(cuid())
+  userId          String
+  credentialId    String    @unique
+  publicKey       String
+  fingerprintName String    @default("Primary Fingerprint")
+  algorithm       String    @default("ES256")
+  registeredAt    DateTime  @default(now())
+  lastVerifiedAt  DateTime?
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([credentialId])
 }
 
 enum PodStatus {
@@ -282,6 +299,7 @@ enum SignalSource {
   BLE
   PERSON_COUNT
   MANUAL
+  BIOMETRIC
 }
 
 model VerificationSignal {
