@@ -74,7 +74,10 @@ export default function ReportsPage() {
       ]);
 
       setPods(podsRes.data || []);
-      setSessions(sessionsRes.data?.sessions || []);
+      const rawSessions = Array.isArray(sessionsRes.data)
+        ? sessionsRes.data
+        : sessionsRes.data?.sessions || [];
+      setSessions(rawSessions);
     } catch (err: any) {
       setError(err?.message || 'Failed to load attendance reports.');
     } finally {

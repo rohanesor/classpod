@@ -54,6 +54,15 @@ export class AutomationController {
     return this.automationService.resendWhatsApp(id, user.id);
   }
 
+  @Post('trigger/:sessionId')
+  @Roles(UserRole.TEACHER, UserRole.ADMIN)
+  async triggerForSession(
+    @Param('sessionId') sessionId: string,
+    @CurrentUser() user: User
+  ) {
+    return this.automationService.executePipelineDirectly(sessionId, `manual_trigger_by_${user.id}`);
+  }
+
   @Post('test-whatsapp')
   @Roles(UserRole.TEACHER, UserRole.ADMIN)
   async testWhatsApp(

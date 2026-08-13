@@ -505,9 +505,18 @@ export default function PodsPage() {
     setIsEndingSession(true);
     setAttendanceError(null);
     try {
+      const closingSessionId = attendanceSession.id;
       await apiClient.post('/attendance/end', {
-        sessionId: attendanceSession.id,
+        sessionId: closingSessionId,
       });
+
+      // Direct trigger to guarantee instant Excel/PDF and WhatsApp generation
+      try {
+        await apiClient.post(`/automation/trigger/${closingSessionId}`);
+      } catch (autoErr) {
+        window.console.warn('Direct automation trigger notice:', autoErr);
+      }
+
       setAttendanceSession(null);
       setIsAttendanceOpen(false);
       setSelectedAttendancePod(null);
