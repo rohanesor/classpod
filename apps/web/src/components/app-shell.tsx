@@ -23,7 +23,7 @@ import {
 
 const navigationItems = [
   { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
-  { href: '/attendance', label: 'Attendance', icon: GraduationCap },
+  { href: '/pods', label: 'Attendance', icon: GraduationCap },
   { href: '/reports', label: 'Reports', icon: FileSpreadsheet },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];

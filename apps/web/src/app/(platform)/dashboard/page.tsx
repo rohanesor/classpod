@@ -207,14 +207,14 @@ export default function HomePage() {
         {/* Quick Action Button in Header */}
         <div className="flex items-center gap-2">
           {isTeacher ? (
-            <Link href="/attendance">
+            <Link href="/pods">
               <Button className="h-10 px-4 font-bold shadow-md gap-2">
                 <PlayCircle className="h-4 w-4" />
                 <span>Start Attendance</span>
               </Button>
             </Link>
           ) : (
-            <Link href="/attendance">
+            <Link href="/pods">
               <Button variant="secondary" className="h-10 px-4 font-bold gap-2">
                 <GraduationCap className="h-4 w-4 text-primary" />
                 <span>My Attendance</span>
