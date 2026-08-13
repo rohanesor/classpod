@@ -291,7 +291,9 @@ export class AutomationService {
 
     return {
       success: result.success,
-      message: result.success ? 'WhatsApp test notification sent successfully!' : 'Failed to send WhatsApp message',
+      message: result.success
+        ? 'WhatsApp test notification sent successfully!'
+        : `Failed to send WhatsApp message: ${result.rawPayload?.error || 'Unknown error'}`,
       messageId: result.messageId,
       provider: result.provider,
       recipient: targetPhone || 'Default configured number (+916380221196)',

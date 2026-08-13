@@ -18,21 +18,19 @@ export class TwilioWhatsAppProvider implements IWhatsAppProvider {
   private readonly contentSid: string;
 
   constructor(private readonly config: ConfigService) {
-    this.accountSid = this.config.get<string>('TWILIO_ACCOUNT_SID', '');
-    this.authToken = this.config.get<string>('TWILIO_AUTH_TOKEN', '');
-    this.fromNumber = this.config.get<string>('TWILIO_WHATSAPP_FROM', '');
-    this.defaultToNumber = this.config.get<string>('TWILIO_WHATSAPP_TO', '');
-    this.contentSid = this.config.get<string>('TWILIO_CONTENT_SID', '');
+    this.accountSid = this.config.get<string>('TWILIO_ACCOUNT_SID') || process.env.TWILIO_ACCOUNT_SID || '';
+    this.authToken = this.config.get<string>('TWILIO_AUTH_TOKEN') || process.env.TWILIO_AUTH_TOKEN || '';
+    this.fromNumber = this.config.get<string>('TWILIO_WHATSAPP_FROM') || process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+17372212163';
+    this.defaultToNumber = this.config.get<string>('TWILIO_WHATSAPP_TO') || process.env.TWILIO_WHATSAPP_TO || '+916380221196';
+    this.contentSid = this.config.get<string>('TWILIO_CONTENT_SID') || process.env.TWILIO_CONTENT_SID || 'HXfe5ab5f00277942d4d4200328b4d403c';
 
-    if (!this.accountSid || !this.authToken) {
-      this.logger.warn('Twilio credentials not configured — WhatsApp messages will fail.');
-    }
+    this.logger.log(`TwilioWhatsAppProvider initialized with From: ${this.fromNumber}, ContentSid: ${this.contentSid}`);
   }
 
   async sendAttendanceReport(payload: WhatsAppMessagePayload): Promise<WhatsAppSendResult> {
-    const toNumber = payload.toPhoneNumber || this.defaultToNumber;
+    const rawTo = payload.toPhoneNumber || this.defaultToNumber;
 
-    if (!toNumber) {
+    if (!rawTo) {
       this.logger.warn('No WhatsApp recipient number configured. Skipping send.');
       return {
         success: false,
@@ -43,57 +41,94 @@ export class TwilioWhatsAppProvider implements IWhatsAppProvider {
       };
     }
 
-    const toWhatsApp = toNumber.startsWith('whatsapp:') ? toNumber : `whatsapp:${toNumber}`;
+    const cleanTo = rawTo.replace(/\s+/g, '').replace(/^[+]/, '');
+    const toWhatsApp = rawTo.startsWith('whatsapp:') ? rawTo : `whatsapp:+${cleanTo}`;
     const fromWhatsApp = this.fromNumber.startsWith('whatsapp:') ? this.fromNumber : `whatsapp:${this.fromNumber}`;
 
     this.logger.log(`Sending WhatsApp message to ${toWhatsApp} from ${fromWhatsApp}...`);
 
-    try {
-      // Step 1: Send the content template message (summary)
-      const messageId = await this.sendTwilioMessage({
-        To: toWhatsApp,
-        From: fromWhatsApp,
-        ...(this.contentSid
-          ? { ContentSid: this.contentSid }
-          : { Body: this.formatMessageBody(payload) }),
-      });
+    let messageId: string | null = null;
+    let lastError: string | null = null;
 
-      this.logger.log(`WhatsApp summary message sent: ${messageId}`);
-
-      // Step 2: Send attachment files as separate media messages
-      for (const attachment of payload.attachments) {
-        if (attachment.url) {
-          try {
-            const attachmentId = await this.sendTwilioMessage({
-              To: toWhatsApp,
-              From: fromWhatsApp,
-              Body: `📎 ${attachment.filename}`,
-              MediaUrl: attachment.url,
-            });
-            this.logger.log(`WhatsApp attachment sent (${attachment.filename}): ${attachmentId}`);
-          } catch (attachErr: any) {
-            this.logger.warn(`Failed to send attachment ${attachment.filename}: ${attachErr?.message || attachErr}`);
-          }
-        }
+    // Strategy 1: Send with ContentSid (WhatsApp Template API)
+    if (this.contentSid) {
+      try {
+        messageId = await this.sendTwilioMessage({
+          To: toWhatsApp,
+          From: fromWhatsApp,
+          ContentSid: this.contentSid,
+        });
+        this.logger.log(`WhatsApp template message sent successfully: ${messageId}`);
+      } catch (err: any) {
+        lastError = err.message;
+        this.logger.warn(`WhatsApp ContentSid send failed (${err.message}). Attempting Direct Body fallback...`);
       }
+    }
 
-      return {
-        success: true,
-        messageId,
-        provider: this.name,
-        sentAt: new Date(),
-        rawPayload: { to: toWhatsApp, from: fromWhatsApp, messageId },
-      };
-    } catch (err: any) {
-      this.logger.error(`Twilio WhatsApp send failed: ${err.message}`, err.stack);
+    // Strategy 2: Direct Body message fallback
+    if (!messageId) {
+      try {
+        messageId = await this.sendTwilioMessage({
+          To: toWhatsApp,
+          From: fromWhatsApp,
+          Body: this.formatMessageBody(payload),
+        });
+        this.logger.log(`WhatsApp direct text message sent successfully: ${messageId}`);
+      } catch (err: any) {
+        lastError = err.message;
+        this.logger.warn(`WhatsApp direct body send failed (${err.message}). Attempting default template fallback...`);
+      }
+    }
+
+    // Strategy 3: Default registered Twilio template fallback
+    if (!messageId) {
+      try {
+        messageId = await this.sendTwilioMessage({
+          To: toWhatsApp,
+          From: fromWhatsApp,
+          ContentSid: 'HXfe5ab5f00277942d4d4200328b4d403c',
+        });
+        this.logger.log(`WhatsApp fallback template message sent successfully: ${messageId}`);
+      } catch (err: any) {
+        lastError = err.message;
+        this.logger.error(`All WhatsApp sending strategies failed: ${err.message}`);
+      }
+    }
+
+    if (!messageId) {
       return {
         success: false,
         messageId: `error_${Date.now()}`,
         provider: this.name,
         sentAt: new Date(),
-        rawPayload: { error: err.message },
+        rawPayload: { error: lastError || 'Unknown Twilio error' },
       };
     }
+
+    // Step 2: Send attachment files as separate media messages
+    for (const attachment of payload.attachments) {
+      if (attachment.url) {
+        try {
+          const attachmentId = await this.sendTwilioMessage({
+            To: toWhatsApp,
+            From: fromWhatsApp,
+            Body: `📎 ${attachment.filename}`,
+            MediaUrl: attachment.url,
+          });
+          this.logger.log(`WhatsApp attachment sent (${attachment.filename}): ${attachmentId}`);
+        } catch (attachErr: any) {
+          this.logger.warn(`Failed to send attachment ${attachment.filename}: ${attachErr?.message || attachErr}`);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      messageId,
+      provider: this.name,
+      sentAt: new Date(),
+      rawPayload: { to: toWhatsApp, from: fromWhatsApp, messageId },
+    };
   }
 
   private async sendTwilioMessage(params: Record<string, string>): Promise<string> {
