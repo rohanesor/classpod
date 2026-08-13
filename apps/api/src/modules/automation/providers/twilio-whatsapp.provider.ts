@@ -120,7 +120,21 @@ export class TwilioWhatsAppProvider implements IWhatsAppProvider {
       };
     }
 
-    // Step 2: Send attachment files as separate media messages
+    // Step 2: Also attempt to send the detailed ClassPod attendance summary if user is in an active session
+    if (this.contentSid) {
+      try {
+        const bodyId = await this.sendTwilioMessage({
+          To: toWhatsApp,
+          From: fromWhatsApp,
+          Body: this.formatMessageBody(payload),
+        });
+        this.logger.log(`WhatsApp detailed ClassPod report delivered: ${bodyId}`);
+      } catch (bodyErr: any) {
+        this.logger.log(`Rich text delivery deferred: ${bodyErr?.message || bodyErr}`);
+      }
+    }
+
+    // Step 3: Send attachment files as separate media messages
     for (const attachment of payload.attachments) {
       if (attachment.url) {
         try {
