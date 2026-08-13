@@ -314,12 +314,13 @@ export class GatewayService {
 
     for (const obs of observations) {
       const payload = obs.payload as any;
-      if (payload && payload.image && typeof payload.image === 'string' && payload.image.length > 50) {
+      const img = payload?.imageUrl || payload?.image;
+      if (img && typeof img === 'string' && img.length > 5) {
         return {
           observationId: obs.id,
           gatewayId: obs.gatewayId,
           timestamp: obs.createdAt,
-          image: payload.image,
+          image: img,
           width: payload.width || 320,
           height: payload.height || 240,
           bytes: payload.frame_bytes || payload.bytes || 12400,
@@ -438,9 +439,9 @@ export class GatewayService {
         finalPayload.imageUrl = uploadResult.url;
         finalPayload.storagePath = uploadResult.storagePath;
 
-        // Remove heavy raw base64 data strings from the DB JSON payload
+        // Replace heavy raw base64 data strings with clean CDN/Storage URL
         delete finalPayload.frame_bytes;
-        delete finalPayload.image;
+        finalPayload.image = uploadResult.url;
       } catch (err: any) {
         // Log storage upload error but retain metadata payload
         this.eventLogger.audit('gateway.observation.storage_error', { error: err.message });

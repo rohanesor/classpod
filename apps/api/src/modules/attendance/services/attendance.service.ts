@@ -747,7 +747,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
           difference: null,
           confidence: null,
           capturedTime: obs.createdAt,
-          image: payload.image || null,
+          image: payload.imageUrl || payload.image || null,
           status: 'AI Offline',
         };
       } else if (payload && payload.personCount !== undefined && payload.personCount !== null) {
@@ -765,10 +765,10 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
                 : Math.round(payload.confidence * 100))
             : 96,
           capturedTime: obs.createdAt,
-          image: payload.image || null,
+          image: payload.imageUrl || payload.image || null,
           status: 'Analysis Complete',
         };
-      } else if (payload && payload.image) {
+      } else if (payload && (payload.image || payload.imageUrl)) {
         cameraStatus = 'Processing...';
         latestAiObservation = {
           observationId: obs.id,
@@ -777,7 +777,7 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
           difference: null,
           confidence: null,
           capturedTime: obs.createdAt,
-          image: payload.image,
+          image: payload.imageUrl || payload.image,
           status: 'Processing...',
         };
       } else if (obsAgeMs < 15000) {

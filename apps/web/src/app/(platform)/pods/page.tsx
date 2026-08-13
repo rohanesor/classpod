@@ -2208,13 +2208,13 @@ export default function PodsPage() {
                   })()}
 
                   {/* Latest Camera Frame Thumbnail */}
-                  {attendanceSession.latestAiObservation?.image && (
+                  {(attendanceSession.latestAiObservation?.image || attendanceSession.latestAiObservation?.imageUrl) && (
                     <div className="flex items-center justify-between gap-4 pt-2 border-t border-purple-500/20 text-xs">
                       <div className="flex items-center gap-3">
                         <div className="h-12 w-20 rounded-lg overflow-hidden border bg-black shrink-0">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={attendanceSession.latestAiObservation.image}
+                            src={attendanceSession.latestAiObservation.image || attendanceSession.latestAiObservation.imageUrl}
                             alt="Classroom Capture"
                             className="w-full h-full object-cover"
                           />
