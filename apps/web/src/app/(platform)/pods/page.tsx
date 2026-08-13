@@ -2165,15 +2165,14 @@ export default function PodsPage() {
                     </div>
                   </div>
 
-                  {/* Real Proxy Discrepancy Alert: Only when Digital Check-ins exceed Physical Headcount */}
+                  {/* Real Proxy Discrepancy Alert: Digital Check-ins exceed Physical Headcount */}
                   {(() => {
-                    const detectedCount = attendanceSession.latestAiObservation?.personCount;
+                    const rawDetected = attendanceSession.latestAiObservation?.personCount;
+                    const detectedCount = typeof rawDetected === 'number' ? rawDetected : 0;
                     const checkedInCount = liveStats.checkedIn || 0;
 
-                    if (typeof detectedCount !== 'number' || detectedCount <= 0) return null;
-
-                    // Case 1: Proxy Anomaly -> More phone check-ins than physical humans seen by camera
-                    if (checkedInCount > detectedCount + 2) {
+                    // Case 1: Proxy Anomaly -> More student phones checked in than physical humans seen by camera
+                    if (checkedInCount > detectedCount) {
                       const proxyDiff = checkedInCount - detectedCount;
                       return (
                         <div className="p-4 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-500 space-y-1.5 animate-in fade-in duration-300">
@@ -2182,7 +2181,7 @@ export default function PodsPage() {
                             <span>⚠ PROXY RISK DETECTED (+{proxyDiff} Digital Anomaly)</span>
                           </div>
                           <p className="text-xs text-rose-400 pl-7">
-                            Discrepancy: {checkedInCount} student phones checked in, but camera optical headcount detected only {detectedCount} physical humans in the classroom.
+                            Discrepancy: {checkedInCount} student phone{checkedInCount > 1 ? 's' : ''} checked in, but camera optical headcount detected only {detectedCount} physical human{detectedCount === 1 ? '' : 's'} in the classroom.
                           </p>
                         </div>
                       );
@@ -2198,7 +2197,7 @@ export default function PodsPage() {
                             <span>Physical Presence Verified ({detectedCount} Students Detected in Room)</span>
                           </div>
                           <p className="text-[11px] text-muted-foreground pl-6">
-                            {waitingCount} students physically detected in room are currently submitting Bluetooth check-ins.
+                            {waitingCount} student{waitingCount > 1 ? 's' : ''} physically detected in room are currently submitting Bluetooth check-ins.
                           </p>
                         </div>
                       );

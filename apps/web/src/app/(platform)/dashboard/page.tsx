@@ -109,19 +109,35 @@ export default function HomePage() {
           const BleClient = bleModule.BleClient;
           await BleClient.initialize();
 
+          let bleFound = false;
+          let scannedGatewayId = '';
+
           await BleClient.requestLEScan(
-            { services: ['434c4153-5350-4f44-0000-000000000000'] },
+            {
+              services: ['434c4153-5350-4f44-0000-000000000000'],
+              allowDuplicates: false,
+            },
             (result) => {
-              if (result.device && result.device.deviceId) {
-                gatewayId = result.device.deviceId;
+              if (result.device) {
+                bleFound = true;
+                scannedGatewayId = result.device.deviceId || 'esp32-cam-node-1';
               }
             }
           );
 
-          await new Promise((resolve) => setTimeout(resolve, 2500));
+          await new Promise((resolve) => setTimeout(resolve, 3000));
           await BleClient.stopLEScan();
-        } catch {
-          // Fallback to active challenge token
+
+          if (!bleFound) {
+            throw new Error('No ClassPod BLE Gateway detected nearby. You must be physically inside the classroom in range of the ESP32 to check in.');
+          }
+
+          gatewayId = scannedGatewayId || gatewayId;
+        } catch (bleErr: any) {
+          if (bleErr?.message?.includes('No ClassPod BLE Gateway')) {
+            throw bleErr;
+          }
+          throw new Error('Bluetooth proximity check failed: ' + (bleErr?.message || 'Please ensure Bluetooth and Location are enabled on your phone.'));
         }
       }
 
