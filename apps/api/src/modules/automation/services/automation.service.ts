@@ -297,4 +297,178 @@ export class AutomationService {
       recipient: targetPhone || 'Default configured number (+916380221196)',
     };
   }
+
+  async executePipelineDirectly(sessionId: string, triggeredBy = 'direct_call') {
+    const session = await this.prisma.attendanceSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        pod: true,
+        teacher: true,
+        decisions: {
+          include: {
+            student: true,
+            signals: true,
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      this.logger.warn(`Session ${sessionId} not found for direct pipeline execution.`);
+      return null;
+    }
+
+    const run = await this.prisma.automationRun.create({
+      data: {
+        sessionId,
+        podId: session.podId,
+        teacherId: session.teacherId,
+        triggeredBy,
+        status: 'RUNNING',
+        startedAt: new Date(),
+      },
+    });
+
+    try {
+      const totalEnrolled = await this.prisma.enrollment.count({
+        where: { podId: session.podId, status: 'ACTIVE' },
+      });
+
+      const decisions = session.decisions;
+      const checkedInDecisions = decisions.filter(
+        (d) => d.status === 'CHECKED_IN' || d.status === 'VERIFIED'
+      );
+      const presentCount = checkedInDecisions.length;
+      const absentCount = Math.max(0, totalEnrolled - presentCount);
+      const verifiedCount = decisions.filter((d) => d.status === 'VERIFIED').length;
+      const pendingCount = decisions.filter((d) => d.status === 'CHECKED_IN').length;
+
+      const endedAt = session.endedAt || session.expiresAt || new Date();
+      const startedAt = session.startedAt;
+      const sessionDurationSec = Math.max(
+        0,
+        Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000)
+      );
+
+      const reportData: AttendanceReportData = {
+        session: session as any,
+        totalEnrolled,
+        presentCount,
+        absentCount,
+        verifiedCount,
+        pendingCount,
+        sessionDurationSec,
+        generatedAt: new Date(),
+      };
+
+      const pathPrefix = `automation/attendance/${sessionId}`;
+      const attachments: WhatsAppAttachment[] = [];
+
+      // 1. Excel
+      const excel = await this.excelGenerator.generate(reportData);
+      const excelUpload = await this.storageService.upload(
+        excel.filename,
+        excel.buffer,
+        excel.mimeType,
+        pathPrefix
+      );
+      await this.prisma.automationArtifact.create({
+        data: {
+          runId: run.id,
+          type: 'EXCEL_REPORT',
+          filename: excel.filename,
+          mimeType: excel.mimeType,
+          storagePath: excelUpload.storagePath,
+          sizeBytes: excelUpload.sizeBytes,
+        },
+      });
+      attachments.push({
+        filename: excel.filename,
+        mimeType: excel.mimeType,
+        storagePath: excelUpload.storagePath,
+        url: this.storageService.getUrl(excelUpload.storagePath),
+      });
+
+      // 2. PDF
+      const pdf = await this.pdfGenerator.generate(reportData);
+      const pdfUpload = await this.storageService.upload(
+        pdf.filename,
+        pdf.buffer,
+        pdf.mimeType,
+        pathPrefix
+      );
+      await this.prisma.automationArtifact.create({
+        data: {
+          runId: run.id,
+          type: 'PDF_REPORT',
+          filename: pdf.filename,
+          mimeType: pdf.mimeType,
+          storagePath: pdfUpload.storagePath,
+          sizeBytes: pdfUpload.sizeBytes,
+        },
+      });
+      attachments.push({
+        filename: pdf.filename,
+        mimeType: pdf.mimeType,
+        storagePath: pdfUpload.storagePath,
+        url: this.storageService.getUrl(pdfUpload.storagePath),
+      });
+
+      // 3. Summary
+      const textSummary = this.summaryGenerator.generateTextSummary(reportData);
+      const summaryBuffer = Buffer.from(textSummary, 'utf-8');
+      const summaryUpload = await this.storageService.upload(
+        'summary.txt',
+        summaryBuffer,
+        'text/plain',
+        pathPrefix
+      );
+      await this.prisma.automationArtifact.create({
+        data: {
+          runId: run.id,
+          type: 'AI_SUMMARY',
+          filename: 'summary.txt',
+          mimeType: 'text/plain',
+          storagePath: summaryUpload.storagePath,
+          sizeBytes: summaryUpload.sizeBytes,
+        },
+      });
+
+      // 4. WhatsApp
+      const teacherPhone = session.teacher.phone || undefined;
+      const waResult = await this.whatsappProvider.sendAttendanceReport({
+        toPhoneNumber: teacherPhone,
+        teacherName: session.teacher.name,
+        podName: session.pod.name,
+        messageBody: textSummary,
+        attachments,
+        sessionId,
+        automationRunId: run.id,
+      });
+
+      await this.prisma.automationRun.update({
+        where: { id: run.id },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          summary: textSummary,
+          whatsappMessage: textSummary,
+          whatsappSentAt: waResult.sentAt,
+        },
+      });
+
+      this.logger.log(`[Direct Execution] Automation pipeline completed for session ${sessionId}`);
+      return { success: true, runId: run.id };
+    } catch (err: any) {
+      this.logger.error(`[Direct Execution] Automation pipeline failed: ${err.message}`, err.stack);
+      await this.prisma.automationRun.update({
+        where: { id: run.id },
+        data: {
+          status: 'FAILED',
+          error: err.message,
+        },
+      });
+      return { success: false, error: err.message };
+    }
+  }
 }

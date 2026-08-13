@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { QUEUE_NAMES } from '@/common/queues/queue-names';
 import { ATTENDANCE_EVENT_NAMES } from '@/modules/attendance/constants/attendance-events';
+import { AutomationService } from '../services/automation.service';
 
 export interface AttendanceCompletedEventPayload {
   sessionId: string;
@@ -18,17 +19,25 @@ export class AutomationEventListener {
 
   constructor(
     @InjectQueue(QUEUE_NAMES.AUTOMATION)
-    private readonly automationQueue: Queue
+    private readonly automationQueue: Queue,
+    @Inject(forwardRef(() => AutomationService))
+    private readonly automationService: AutomationService
   ) {}
 
   @OnEvent(ATTENDANCE_EVENT_NAMES.CLOSED)
   async handleAttendanceClosed(payload: AttendanceCompletedEventPayload): Promise<void> {
     await this.enqueueAutomationJob(payload, ATTENDANCE_EVENT_NAMES.CLOSED);
+    this.automationService.executePipelineDirectly(payload.sessionId, ATTENDANCE_EVENT_NAMES.CLOSED).catch((err) => {
+      this.logger.warn(`Direct execution fallback error for session ${payload.sessionId}: ${err.message}`);
+    });
   }
 
   @OnEvent(ATTENDANCE_EVENT_NAMES.EXPIRED)
   async handleAttendanceExpired(payload: AttendanceCompletedEventPayload): Promise<void> {
     await this.enqueueAutomationJob(payload, ATTENDANCE_EVENT_NAMES.EXPIRED);
+    this.automationService.executePipelineDirectly(payload.sessionId, ATTENDANCE_EVENT_NAMES.EXPIRED).catch((err) => {
+      this.logger.warn(`Direct execution fallback error for session ${payload.sessionId}: ${err.message}`);
+    });
   }
 
   private async enqueueAutomationJob(

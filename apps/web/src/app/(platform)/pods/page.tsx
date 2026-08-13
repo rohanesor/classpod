@@ -2156,18 +2156,47 @@ export default function PodsPage() {
                     </div>
                   </div>
 
-                  {/* Explicit PROXY RISK DETECTED Warning Banner */}
-                  {(attendanceSession.latestAiObservation?.difference ?? 0) < 0 && (
-                    <div className="p-4 rounded-xl border border-red-500/40 bg-red-500/10 text-red-400 space-y-1.5 animate-in fade-in duration-300">
-                      <div className="flex items-center gap-2 font-bold text-sm">
-                        <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
-                        <span>⚠ PROXY RISK DETECTED</span>
-                      </div>
-                      <p className="text-xs text-red-300/90 pl-7">
-                        Reason: Expected classroom presence does not match verified attendance signals. Physical camera headcount is less than expected enrollment.
-                      </p>
-                    </div>
-                  )}
+                  {/* Real Proxy Discrepancy Alert: Only when Digital Check-ins exceed Physical Headcount */}
+                  {(() => {
+                    const detectedCount = attendanceSession.latestAiObservation?.personCount;
+                    const checkedInCount = liveStats.checkedIn || 0;
+
+                    if (typeof detectedCount !== 'number' || detectedCount <= 0) return null;
+
+                    // Case 1: Proxy Anomaly -> More phone check-ins than physical humans seen by camera
+                    if (checkedInCount > detectedCount + 2) {
+                      const proxyDiff = checkedInCount - detectedCount;
+                      return (
+                        <div className="p-4 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-500 space-y-1.5 animate-in fade-in duration-300">
+                          <div className="flex items-center gap-2 font-bold text-sm">
+                            <AlertTriangle className="h-5 w-5 text-rose-500 shrink-0" />
+                            <span>⚠ PROXY RISK DETECTED (+{proxyDiff} Digital Anomaly)</span>
+                          </div>
+                          <p className="text-xs text-rose-400 pl-7">
+                            Discrepancy: {checkedInCount} student phones checked in, but camera optical headcount detected only {detectedCount} physical humans in the classroom.
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    // Case 2: In-Room Students Checking In -> Physical Headcount exceeds currently checked-in
+                    if (detectedCount > checkedInCount && checkedInCount > 0) {
+                      const waitingCount = detectedCount - checkedInCount;
+                      return (
+                        <div className="p-3.5 rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-500 space-y-1 animate-in fade-in duration-300">
+                          <div className="flex items-center gap-2 font-bold text-xs">
+                            <Users className="h-4 w-4 text-blue-500 shrink-0" />
+                            <span>Physical Presence Verified ({detectedCount} Students Detected in Room)</span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground pl-6">
+                            {waitingCount} students physically detected in room are currently submitting Bluetooth check-ins.
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })()}
 
                   {/* Latest Camera Frame Thumbnail */}
                   {attendanceSession.latestAiObservation?.image && (

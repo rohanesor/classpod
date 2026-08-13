@@ -676,8 +676,16 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
             id: true,
             name: true,
             email: true,
+            registeredDevice: {
+              select: {
+                deviceId: true,
+                platform: true,
+                registeredAt: true,
+              },
+            },
           },
         },
+        signals: true,
       },
     });
 
