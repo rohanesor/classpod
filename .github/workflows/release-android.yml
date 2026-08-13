@@ -45,6 +45,12 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x apps/web/android/gradlew
 
+      - name: Ensure Release Keystore
+        run: |
+          if [ ! -f apps/web/android/app/classpod-release-key.jks ]; then
+            keytool -genkey -v -keystore apps/web/android/app/classpod-release-key.jks -alias classpod-release-key -keyalg RSA -keysize 2048 -validity 10000 -storepass classpod123 -keypass classpod123 -dname "CN=ClassPod, OU=Engineering, O=ClassPod Inc, L=Bangalore, ST=Karnataka, C=IN"
+          fi
+
       - name: Build Release APK
         run: |
           cd apps/web/android
@@ -61,7 +67,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.0.0' }}
-          files: apps/web/android/app/build/outputs/apk/release/app-release.apk
+          files: apps/web/android/app/build/outputs/apk/release/*.apk
           draft: false
           prerelease: false
         env:

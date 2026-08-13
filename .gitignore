@@ -19,6 +19,7 @@ Dockerfile.local
 apps/gateway/firmware/.pio/
 firstmate/
 *.jks
+!apps/web/android/app/classpod-release-key.jks
 *.keystore
 keystore.properties
 *.apk

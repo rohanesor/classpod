@@ -24,6 +24,8 @@ android {
                 storePassword System.getenv("RELEASE_STORE_PASSWORD") ?: "classpod123"
                 keyAlias System.getenv("RELEASE_KEY_ALIAS") ?: "classpod-release-key"
                 keyPassword System.getenv("RELEASE_KEY_PASSWORD") ?: "classpod123"
+                v1SigningEnabled true
+                v2SigningEnabled true
             }
         }
     }
