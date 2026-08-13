@@ -5,6 +5,7 @@ import { GatewayService } from './services/gateway.service';
 import { GatewaySecretGuard } from './guards/gateway-secret.guard';
 import { SessionBindingListener } from './listeners/session-binding.listener';
 import { YoloDetectionService } from './services/yolo-detection.service';
+import { PersonDetectionService } from './services/person-detection.service';
 
 import { StorageModule } from '@/common/storage/storage.module';
 
@@ -15,11 +16,12 @@ import { StorageModule } from '@/common/storage/storage.module';
     GatewayService,
     GatewaySecretGuard,
     SessionBindingListener,
+    PersonDetectionService,
     {
       provide: 'IPersonDetector',
       useClass: YoloDetectionService,
     },
   ],
-  exports: [GatewayService, 'IPersonDetector'],
+  exports: [GatewayService, 'IPersonDetector', PersonDetectionService],
 })
 export class GatewayModule {}

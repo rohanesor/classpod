@@ -19,7 +19,7 @@ unsigned long g_lastObservationTime = 0;
 
 void executeCaptureAndUpload(int frameCount = 3) {
     Serial.printf("[CAPTURE] Executing burst capture request (%d frames)...\n", frameCount);
-    g_ledStatus.triggerFlash(100);
+    g_ledStatus.triggerFlash(5000); // Keep bright flash illumination ON for full 5 seconds
 
     if (!g_cameraManager.isInitialized()) {
         Serial.println("[CAMERA] Error: Camera not initialized!");

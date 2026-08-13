@@ -6,8 +6,9 @@ export interface PersonDetectionResult {
   difference: number;
   confidence: number;
   processingTimeMs: number;
-  status: 'ANALYSIS_COMPLETE' | 'FAILED';
+  status: 'ANALYSIS_COMPLETE' | 'AI_UNAVAILABLE';
   analyzedAt: string;
+  detections: any[];
 }
 
 @Injectable()
@@ -70,6 +71,7 @@ export class PersonDetectionService {
         processingTimeMs,
         status: 'ANALYSIS_COMPLETE',
         analyzedAt: new Date().toISOString(),
+        detections: [],
       };
     } catch (err: any) {
       this.logger.error(`Error during person detection analysis: ${err.message}`);
@@ -81,6 +83,7 @@ export class PersonDetectionService {
         processingTimeMs: Date.now() - startTime,
         status: 'ANALYSIS_COMPLETE',
         analyzedAt: new Date().toISOString(),
+        detections: [],
       };
     }
   }
