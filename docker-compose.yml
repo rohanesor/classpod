@@ -60,6 +60,11 @@ services:
       JWT_EXPIRES_IN: 1d
       CORS_ORIGINS: '*'
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
+      TWILIO_WHATSAPP_TO: ${TWILIO_WHATSAPP_TO:-}
+      TWILIO_CONTENT_SID: ${TWILIO_CONTENT_SID:-}
     ports:
       - '4000:4000'
     depends_on:
@@ -89,6 +94,11 @@ services:
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-chars-long}
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-local-dev-secret-key}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
+      TWILIO_WHATSAPP_TO: ${TWILIO_WHATSAPP_TO:-}
+      TWILIO_CONTENT_SID: ${TWILIO_CONTENT_SID:-}
     depends_on:
       postgres:
         condition: service_healthy
