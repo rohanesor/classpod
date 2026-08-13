@@ -477,14 +477,14 @@ function AttendancePageBody({
                           </div>
 
                           <div className="flex items-center gap-2">
-                            <Link href="/automation">
+                            <Link href="/reports">
                               <Button
                                 variant="secondary"
                                 size="sm"
                                 className="h-7 text-[10px] font-bold gap-1 text-primary border-primary/30 hover:bg-primary/10"
                               >
                                 <Zap className="h-3 w-3" />
-                                <span>Automation & Reports Hub</span>
+                                <span>Reports & Exports</span>
                               </Button>
                             </Link>
                           </div>

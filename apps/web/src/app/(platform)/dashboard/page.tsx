@@ -5,48 +5,34 @@ import Link from 'next/link';
 import { useAuth } from '@/components/providers/auth-provider';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
+import { UserAvatar } from '@/components/ui/avatar';
 import { Capacitor } from '@capacitor/core';
 import { getInstallationUuid } from '@/lib/device-id';
 import {
   Users,
-  Radio,
+  GraduationCap,
   Clock,
-  BookOpen,
   Calendar,
-  ChevronRight,
   ArrowRight,
-  TrendingUp,
-  Activity,
-  Inbox,
-  AlertCircle,
   Loader2,
-  ShieldCheck,
-  Smartphone,
-  Eye,
-  Lock,
+  PlayCircle,
   CheckCircle2,
+  AlertCircle,
+  FileSpreadsheet,
   Zap,
+  Plus,
 } from 'lucide-react';
 
-interface MetricCard {
-  title: string;
-  value: string | number;
-  description: string;
-  icon: any;
-  iconColor: string;
-  bgColor: string;
-}
-
-export default function DashboardPage() {
+export default function HomePage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // States
+  // Core States
   const [pods, setPods] = useState<any[]>([]);
-  const [gateways, setGateways] = useState<any[]>([]);
   const [activeSession, setActiveSession] = useState<any | null>(null);
   const [isCheckinLoading, setIsCheckinLoading] = useState(false);
+  const [checkinSuccess, setCheckinSuccess] = useState<string | null>(null);
 
   const isTeacher = user?.role?.toUpperCase() === 'TEACHER';
   const isStudent = user?.role?.toUpperCase() === 'STUDENT';
@@ -65,24 +51,14 @@ export default function DashboardPage() {
         apiClient.get<any>('/attendance/active'),
       ];
 
-      if (isUserTeacher) {
-        promises.push(apiClient.get<any[]>('/gateway/status'));
-      }
-
       const results = await Promise.all(promises);
       const podsRes = results[0];
       const activeSessionRes = results[1];
-      const gwRes = isUserTeacher ? results[2] : null;
 
       setPods(podsRes.data || []);
       setActiveSession(activeSessionRes.data || null);
-
-      if (isUserTeacher && gwRes) {
-        setGateways(gwRes.data || []);
-      }
     } catch (err: any) {
-      window.console.error('Error fetching dashboard metrics:', err);
-      setError(err?.message || 'Failed to load dashboard. Please refresh.');
+      setError(err?.message || 'Failed to load workspace data. Please refresh.');
     } finally {
       setLoading(false);
     }
@@ -91,21 +67,22 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!user) return;
     fetchData();
-    // Auto-refresh stats every 15 seconds
     const interval = window.setInterval(fetchData, 15000);
     return () => window.clearInterval(interval);
   }, [user, fetchData]);
 
-  // Auto-register device installation UUID for students on dashboard load
+  // Auto-register device installation UUID for students
   useEffect(() => {
     if (isStudent && user) {
       const deviceId = getInstallationUuid();
-      apiClient.post('/auth/device/register', {
-        deviceId,
-        platform: Capacitor.getPlatform(),
-      }).catch(() => {
-        // Silent catch if already registered or offline
-      });
+      apiClient
+        .post('/auth/device/register', {
+          deviceId,
+          platform: Capacitor.getPlatform(),
+        })
+        .catch(() => {
+          // Silent catch
+        });
     }
   }, [isStudent, user]);
 
@@ -113,40 +90,39 @@ export default function DashboardPage() {
   const handleCheckIn = async () => {
     if (!activeSession) return;
 
-    // Enforce Mobile App Requirement
-    if (!Capacitor.isNativePlatform()) {
-      window.alert('ClassPod attendance requires the mobile app because BLE proximity verification is required.');
-      return;
-    }
-
     setIsCheckinLoading(true);
+    setError(null);
+    setCheckinSuccess(null);
+
     try {
       const sessionId = activeSession.session?.id || activeSession.id;
       const deviceId = getInstallationUuid();
 
       let gatewayId = 'esp32-cam-node-1';
-      let challengeToken = activeSession.session?.challengeToken || activeSession.challengeToken || 'CP123456';
+      let challengeToken =
+        activeSession.session?.challengeToken || activeSession.challengeToken || 'CP123456';
 
-      // Scan for native BLE gateway challenge payload if on mobile
-      try {
-        const bleModule = await import('@capacitor-community/bluetooth-le');
-        const BleClient = bleModule.BleClient;
-        await BleClient.initialize();
-        
-        await BleClient.requestLEScan(
-          { services: ['434c4153-5350-4f44-0000-000000000000'] },
-          (result) => {
-            if (result.device && result.device.deviceId) {
-              gatewayId = result.device.deviceId;
+      // Scan for native BLE gateway if running on mobile device
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const bleModule = await import('@capacitor-community/bluetooth-le');
+          const BleClient = bleModule.BleClient;
+          await BleClient.initialize();
+
+          await BleClient.requestLEScan(
+            { services: ['434c4153-5350-4f44-0000-000000000000'] },
+            (result) => {
+              if (result.device && result.device.deviceId) {
+                gatewayId = result.device.deviceId;
+              }
             }
-          }
-        );
+          );
 
-        // Allow 3 seconds to scan
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        await BleClient.stopLEScan();
-      } catch {
-        // Fallback to active session challenge token if BLE scan completes
+          await new Promise((resolve) => setTimeout(resolve, 2500));
+          await BleClient.stopLEScan();
+        } catch {
+          // Fallback to active challenge token
+        }
       }
 
       await apiClient.post('/attendance/checkin', {
@@ -154,444 +130,343 @@ export default function DashboardPage() {
         gatewayId,
         challengeToken,
         deviceId,
-        isMobileApp: true,
+        isMobileApp: Capacitor.isNativePlatform(),
       });
 
-      // Immediately set state locally
-      setActiveSession((prev: any) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          decision: {
-            ...prev.decision,
-            status: 'CHECKED_IN',
-          },
-        };
-      });
+      setCheckinSuccess('Attendance check-in submitted successfully!');
+      fetchData();
     } catch (err: any) {
-      window.alert(err?.message || 'Check-in failed. Please move closer to the ClassPod gateway.');
+      setError(err?.message || 'Failed to submit check-in. Please try again.');
     } finally {
       setIsCheckinLoading(false);
     }
   };
 
-  const dashboardMetrics = useMemo<MetricCard[]>(() => {
+  // Metrics computation
+  const totalStudents = useMemo(() => {
+    if (!pods || pods.length === 0) return 0;
     if (isTeacher) {
-      const activeGws = gateways.filter((g) => g.status === 'ONLINE').length;
-      return [
-        {
-          title: 'Academic Pods',
-          value: pods.length,
-          description: `${pods.filter((p) => p.status === 'ACTIVE').length} Active | ${pods.filter((p) => p.status === 'ARCHIVED').length} Archived`,
-          icon: BookOpen,
-          iconColor: 'text-blue-500',
-          bgColor: 'bg-blue-500/10',
-        },
-        {
-          title: 'Classroom Gateways',
-          value: `${activeGws}/${gateways.length}`,
-          description: `${activeGws} Online scanner nodes`,
-          icon: Radio,
-          iconColor: 'text-indigo-500',
-          bgColor: 'bg-indigo-500/10',
-        },
-        {
-          title: 'Active Session',
-          value: activeSession ? '1 Run' : 'None',
-          description: activeSession ? `Pod: ${activeSession.pod?.name}` : 'No sessions active right now',
-          icon: Clock,
-          iconColor: activeSession ? 'text-emerald-500' : 'text-muted-foreground',
-          bgColor: activeSession ? 'bg-emerald-500/10' : 'bg-muted/10',
-        },
-      ];
-    } else {
-      const verifiedStatus = activeSession?.decision?.status;
-      let checkinDisplay = '—';
-      let checkinDesc = 'Join a pod to track stats';
-
-      if (pods.length > 0) {
-        if (verifiedStatus === 'CHECKED_IN' || verifiedStatus === 'VERIFIED') {
-          checkinDisplay = '100%';
-          checkinDesc = 'Current session checked in';
-        } else if (verifiedStatus === 'PENDING') {
-          checkinDisplay = 'Pending';
-          checkinDesc = 'Session check-in awaiting confirmation';
-        } else {
-          checkinDisplay = 'Active';
-          checkinDesc = 'Enrolled in active class pods';
-        }
-      }
-
-      return [
-        {
-          title: 'Joined Classes',
-          value: pods.length,
-          description: 'Total active pod memberships',
-          icon: BookOpen,
-          iconColor: 'text-blue-500',
-          bgColor: 'bg-blue-500/10',
-        },
-        {
-          title: 'Live Attendance',
-          value: activeSession ? '1 Open' : 'Closed',
-          description: activeSession ? `Status: ${activeSession.decision?.status || 'PENDING'}` : 'No active sessions',
-          icon: Activity,
-          iconColor: activeSession ? 'text-primary' : 'text-muted-foreground',
-          bgColor: activeSession ? 'bg-primary/10' : 'bg-muted/10',
-        },
-        {
-          title: 'Verified Check-ins',
-          value: checkinDisplay,
-          description: checkinDesc,
-          icon: TrendingUp,
-          iconColor: 'text-emerald-500',
-          bgColor: 'bg-emerald-500/10',
-        },
-      ];
+      return pods.reduce((acc, p) => acc + (p._count?.enrollments || p.enrollments?.length || 0), 0);
     }
-  }, [isTeacher, pods, gateways, activeSession]);
+    return pods.length;
+  }, [pods, isTeacher]);
+
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }, []);
+
+  const todayDate = useMemo(() => {
+    return new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }, []);
 
   if (loading && pods.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
+      <div className="flex h-96 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">Syncing workspace dashboard telemetry...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto pb-8">
+      {/* Top Greeting & Profile Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-6">
+        <div className="flex items-center gap-4">
+          <UserAvatar
+            name={user?.name}
+            avatarUrl={(user as any)?.avatarUrl}
+            role={user?.role}
+            size="lg"
+            showRoleBadge
+          />
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+                {greeting}, {user?.name?.split(' ')[0] || 'User'}
+              </h1>
+            </div>
+            <p className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1.5 mt-0.5">
+              <Calendar className="h-3.5 w-3.5" />
+              <span>{todayDate}</span>
+              <span>•</span>
+              <span className="capitalize font-semibold text-foreground">
+                {user?.role?.toLowerCase()} Workspace
+              </span>
+            </p>
+          </div>
+        </div>
+
+        {/* Quick Action Button in Header */}
+        <div className="flex items-center gap-2">
+          {isTeacher ? (
+            <Link href="/attendance">
+              <Button className="h-10 px-4 font-bold shadow-md gap-2">
+                <PlayCircle className="h-4 w-4" />
+                <span>Start Attendance</span>
+              </Button>
+            </Link>
+          ) : (
+            <Link href="/attendance">
+              <Button variant="secondary" className="h-10 px-4 font-bold gap-2">
+                <GraduationCap className="h-4 w-4 text-primary" />
+                <span>My Attendance</span>
+              </Button>
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {/* Alert Notifications */}
       {error && (
-        <div className="flex items-center gap-3 p-4 border border-destructive/20 bg-destructive/5 text-destructive rounded-lg shadow-sm">
-          <AlertCircle className="h-5 w-5 shrink-0" />
-          <div className="text-sm font-medium">{error}</div>
-          <Button variant="ghost" onClick={fetchData} className="ml-auto text-xs h-8 border border-destructive/20 hover:bg-destructive/10">
-            Retry
-          </Button>
+        <div className="flex items-center justify-between p-4 rounded-2xl border border-destructive/20 bg-destructive/10 text-destructive text-xs font-semibold">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button onClick={() => setError(null)} className="opacity-70 hover:opacity-100 font-bold ml-2">
+            ✕
+          </button>
         </div>
       )}
-      {/* Welcome Banner */}
-      <div
-        className="rounded-2xl border p-6 md:p-8 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden bg-cover bg-center"
-        style={{ backgroundImage: "url('/assets/Gemini_Generated_Image_bpyfcnbpyfcnbpyf(3).png')" }}
-      >
-        {/* Sleek Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-r from-card via-card/95 to-card/65 z-0" />
 
-        <div className="space-y-2 relative z-10">
-          <span className="text-xs font-bold text-primary uppercase tracking-widest flex items-center gap-1.5">
-            <Calendar className="h-3.5 w-3.5" />
-            {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
-          </span>
-          <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight text-foreground">
-            Welcome back, {user?.name || 'User'}!
-          </h2>
-          <p className="text-sm text-muted-foreground max-w-xl">
-            {isTeacher
-              ? 'Here is an overview of your active classes, hardware gateways, and live attendance metrics.'
-              : 'View your enrolled pods and complete any active attendance check-ins.'}
+      {checkinSuccess && (
+        <div className="flex items-center justify-between p-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 text-xs font-semibold">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>{checkinSuccess}</span>
+          </div>
+          <button
+            onClick={() => setCheckinSuccess(null)}
+            className="opacity-70 hover:opacity-100 font-bold ml-2"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* PRIMARY OPERATIONAL ACTION CARD */}
+      {activeSession ? (
+        <div className="relative overflow-hidden rounded-2xl border-2 border-primary bg-gradient-to-r from-primary/10 via-primary/5 to-background p-6 shadow-lg space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 animate-ping" />
+                <span className="text-[11px] font-black uppercase tracking-wider text-primary">
+                  Live Attendance Session Active
+                </span>
+              </div>
+              <h2 className="text-xl font-bold text-foreground">
+                {activeSession.pod?.name || activeSession.session?.pod?.name || 'Class Session'}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Subject Code:{' '}
+                <strong className="text-foreground">
+                  {activeSession.pod?.subjectCode || activeSession.session?.pod?.subjectCode || '—'}
+                </strong>
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {isStudent && (
+                <Button
+                  onClick={handleCheckIn}
+                  disabled={isCheckinLoading}
+                  className="h-11 px-6 font-bold shadow-lg gap-2 text-sm"
+                >
+                  {isCheckinLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Verifying Presence...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="h-4 w-4" />
+                      <span>Check In Now</span>
+                    </>
+                  )}
+                </Button>
+              )}
+
+              <Link href="/attendance">
+                <Button
+                  variant={isStudent ? 'secondary' : 'default'}
+                  className="h-11 px-5 font-bold shadow-md gap-2"
+                >
+                  <span>Open Session Workspace</span>
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Standby Primary Action Banner */
+        <div className="rounded-2xl border bg-card p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h3 className="text-lg font-bold text-foreground">
+              {isTeacher ? 'Ready to Start Attendance?' : 'Awaiting Next Session'}
+            </h3>
+            <p className="text-xs text-muted-foreground leading-relaxed max-w-xl">
+              {isTeacher
+                ? 'Launch an automated verification session for any of your registered class pods with Bluetooth beacon detection.'
+                : 'When your instructor begins attendance, the active session will appear here automatically for instant check-in.'}
+            </p>
+          </div>
+
+          <Link href="/attendance">
+            <Button className="h-10 px-5 font-bold shadow-sm gap-2 shrink-0">
+              <PlayCircle className="h-4 w-4" />
+              <span>{isTeacher ? 'Start Session' : 'View Attendance'}</span>
+            </Button>
+          </Link>
+        </div>
+      )}
+
+      {/* KEY OPERATIONAL STATISTICS */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Metric 1: Enrolled / Teaching Pods */}
+        <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-2">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-[11px] font-bold uppercase tracking-wider">
+              {isTeacher ? 'Active Pods' : 'Enrolled Classes'}
+            </span>
+            <div className="p-2 rounded-xl bg-primary/10 text-primary">
+              <GraduationCap className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-2xl font-black text-foreground">{pods.length}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {isTeacher ? 'Classes under instruction' : 'Active class enrollments'}
           </p>
         </div>
 
-        {/* Quick action for teacher */}
-        {isTeacher && (
-          <Link href="/pods">
-            <Button className="shrink-0 flex items-center gap-2 shadow-lg hover:translate-x-1 transition-all duration-200 relative z-10">
-              <span>Manage Pods</span>
-              <ArrowRight className="h-4 w-4" />
-            </Button>
+        {/* Metric 2: Total Students / Peered */}
+        <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-2">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-[11px] font-bold uppercase tracking-wider">
+              {isTeacher ? 'Total Students' : 'Classmates'}
+            </span>
+            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600">
+              <Users className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-2xl font-black text-foreground">{totalStudents}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {isTeacher ? 'Roster records across all pods' : 'Enrolled peers in your classes'}
+          </p>
+        </div>
+
+        {/* Metric 3: Active Sessions */}
+        <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-2">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Active Sessions</span>
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
+              <Clock className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-2xl font-black text-foreground">{activeSession ? '1 Active' : '0 Live'}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {activeSession ? 'Real-time telemetry recording' : 'No sessions currently in progress'}
+          </p>
+        </div>
+
+        {/* Metric 4: Reports Link */}
+        <Link
+          href="/reports"
+          className="rounded-2xl border bg-card p-5 shadow-sm space-y-2 hover:border-primary/40 hover:shadow-md transition-all group"
+        >
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-[11px] font-bold uppercase tracking-wider group-hover:text-primary transition-colors">
+              Reports & Logs
+            </span>
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 group-hover:scale-110 transition-transform">
+              <FileSpreadsheet className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 text-primary font-bold text-sm">
+            <span>View All Records</span>
+            <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
+          </div>
+          <p className="text-[11px] text-muted-foreground">Export Excel, PDF & telemetry audits</p>
+        </Link>
+      </div>
+
+      {/* CLASS PODS PREVIEW SECTION */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-foreground tracking-tight">
+            {isTeacher ? 'Your Teaching Pods' : 'Your Enrolled Pods'}
+          </h2>
+          <Link
+            href="/attendance"
+            className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
+          >
+            <span>Manage in Attendance</span>
+            <ArrowRight className="h-3.5 w-3.5" />
           </Link>
-        )}
-      </div>
+        </div>
 
-      {/* Live check-in banner for Student with Multi-Signal Verification Tracker */}
-      {isStudent && activeSession && (
-        <div className="rounded-2xl border bg-gradient-to-r from-primary/10 via-blue-500/10 to-indigo-500/10 border-primary/30 p-6 shadow-sm space-y-5 animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div className="flex gap-4">
-              <div className="h-12 w-12 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary shrink-0 relative">
-                <span className="absolute top-1 right-1 flex h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-                <Activity className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-xs uppercase font-extrabold tracking-wider text-primary">Live Attendance Session</p>
-                <h3 className="text-lg font-bold text-foreground mt-0.5">{activeSession.pod?.name || 'Classroom'}</h3>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Status:{' '}
-                  <span className="font-semibold text-foreground">
-                    {activeSession.decision?.status || 'PENDING'}
-                  </span>
-                </p>
-              </div>
-            </div>
-            {activeSession.decision?.status === 'PENDING' ? (
-              <Button
-                onClick={handleCheckIn}
-                disabled={isCheckinLoading}
-                className="w-full sm:w-auto bg-primary hover:bg-primary/95 text-primary-foreground font-bold shadow-lg flex items-center gap-2"
-              >
-                {isCheckinLoading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    <span>Verifying BLE & Device...</span>
-                  </>
-                ) : (
-                  <>
-                    <Zap className="h-4 w-4" />
-                    <span>Verify & Confirm Attendance</span>
-                  </>
-                )}
+        {pods.length === 0 ? (
+          <div className="p-12 text-center rounded-2xl border bg-card text-muted-foreground space-y-3">
+            <GraduationCap className="h-10 w-10 mx-auto opacity-40 text-primary" />
+            <h3 className="font-bold text-sm text-foreground">No Class Pods Found</h3>
+            <p className="text-xs max-w-sm mx-auto">
+              {isTeacher
+                ? 'Create your first classroom pod in the Attendance workspace to start verifying student presence.'
+                : 'Join a pod using the 6-digit code provided by your instructor.'}
+            </p>
+            <Link href="/attendance">
+              <Button size="sm" className="font-bold shadow-md mt-2">
+                <Plus className="h-4 w-4 mr-1.5" />
+                <span>{isTeacher ? 'Create Pod' : 'Join Pod'}</span>
               </Button>
-            ) : (
-              <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 px-4 py-2 rounded-xl text-xs font-bold self-stretch sm:self-center justify-center shadow-sm">
-                <CheckCircle2 className="h-4 w-4" />
-                <span>4/4 Signals Verified • Present</span>
-              </div>
-            )}
-          </div>
-
-          {/* Real-time 4-Signal Convergence Tracker */}
-          <div className="pt-4 border-t border-primary/20 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-2.5 rounded-lg bg-card/60 border border-border/50 flex items-center gap-2.5">
-              <div className="p-1.5 rounded-md bg-blue-500/10 text-blue-400">
-                <Smartphone className="h-3.5 w-3.5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] text-muted-foreground font-semibold">1. Device</p>
-                <p className="text-xs font-bold text-foreground truncate">Bound UUID</p>
-              </div>
-            </div>
-
-            <div className="p-2.5 rounded-lg bg-card/60 border border-border/50 flex items-center gap-2.5">
-              <div className="p-1.5 rounded-md bg-indigo-500/10 text-indigo-400">
-                <Radio className="h-3.5 w-3.5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] text-muted-foreground font-semibold">2. BLE Proximity</p>
-                <p className="text-xs font-bold text-foreground truncate">In Classroom</p>
-              </div>
-            </div>
-
-            <div className="p-2.5 rounded-lg bg-card/60 border border-border/50 flex items-center gap-2.5">
-              <div className="p-1.5 rounded-md bg-violet-500/10 text-violet-400">
-                <Eye className="h-3.5 w-3.5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] text-muted-foreground font-semibold">3. Camera/AI</p>
-                <p className="text-xs font-bold text-foreground truncate">Vision Match</p>
-              </div>
-            </div>
-
-            <div className="p-2.5 rounded-lg bg-card/60 border border-border/50 flex items-center gap-2.5">
-              <div className="p-1.5 rounded-md bg-emerald-500/10 text-emerald-400">
-                <Lock className="h-3.5 w-3.5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] text-muted-foreground font-semibold">4. Session</p>
-                <p className="text-xs font-bold text-foreground truncate">Anti-Tamper</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Novelty Architecture Showcase Card */}
-      <div className="rounded-2xl border bg-gradient-to-br from-slate-900 via-indigo-950/40 to-slate-900 border-indigo-500/20 p-6 shadow-xl space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-500/20 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-400">
-              <ShieldCheck className="h-6 w-6" />
-            </div>
-            <div>
-              <h2 className="text-base font-extrabold text-white tracking-tight">WHY CLASSPOD PREVENTS PROXY ATTENDANCE</h2>
-              <p className="text-xs text-indigo-300/80">Multi-Signal Convergence Anti-Proxy Architecture</p>
-            </div>
-          </div>
-          <span className="text-[11px] font-bold px-3 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full self-start sm:self-center">
-            Android & iOS Supported
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
-          <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
-            <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs">
-              <span className="h-5 w-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[10px]">01</span>
-              <span>Device-Bound Identity</span>
-            </div>
-            <p className="text-xs text-slate-400">
-              One student account is strictly bound to 1 registered physical mobile device using hardware UUID.
-            </p>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
-            <div className="flex items-center gap-2 text-blue-400 font-bold text-xs">
-              <span className="h-5 w-5 rounded-full bg-blue-500/20 flex items-center justify-center text-[10px]">02</span>
-              <span>Physical Presence</span>
-            </div>
-            <p className="text-xs text-slate-400">
-              ESP32 Bluetooth LE Beacon verifies the mobile device is physically located inside the classroom boundary.
-            </p>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
-            <div className="flex items-center gap-2 text-violet-400 font-bold text-xs">
-              <span className="h-5 w-5 rounded-full bg-violet-500/20 flex items-center justify-center text-[10px]">03</span>
-              <span>Visual Verification</span>
-            </div>
-            <p className="text-xs text-slate-400">
-              ESP32-CAM AI vision service independently verifies physical classroom occupancy vs registered attendees.
-            </p>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
-            <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-              <span className="h-5 w-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-[10px]">04</span>
-              <span>Session Integrity</span>
-            </div>
-            <p className="text-xs text-slate-400">
-              Dynamic challenge tokens & active session locks prevent proxy relays, identity hopping, and spoofing.
-            </p>
-          </div>
-        </div>
-
-        <div className="pt-2 text-center text-xs text-indigo-300/90 font-medium bg-indigo-950/40 p-2.5 rounded-lg border border-indigo-500/20">
-          ⭐ <b>ClassPod doesn't trust a single signal.</b> It verifies device identity, physical presence, visual count, and session tokens together.
-        </div>
-      </div>
-
-      {/* Metrics Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {dashboardMetrics.map((card, idx) => (
-          <div key={idx} className="rounded-xl border bg-card p-6 shadow-sm space-y-4 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{card.title}</span>
-              <div className={`p-2.5 rounded-lg ${card.bgColor} ${card.iconColor}`}>
-                <card.icon className="h-5 w-5" />
-              </div>
-            </div>
-            <div>
-              <p className="text-3xl font-extrabold text-foreground">{card.value}</p>
-              <p className="text-xs text-muted-foreground mt-1">{card.description}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Roster & Telemetry Rows */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Classes List (Takes 2 cols) */}
-        <div className="lg:col-span-2 rounded-xl border bg-card p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b pb-3">
-            <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" />
-              Academic Classes
-            </h3>
-            <Link href="/pods" className="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
-              <span>View All</span>
-              <ChevronRight className="h-3 w-3" />
             </Link>
           </div>
-
-          {pods.length === 0 ? (
-            <div className="flex flex-col items-center justify-center text-center py-10 px-4 bg-muted/10 rounded-xl border border-dashed">
-              <Inbox className="h-10 w-10 text-muted-foreground opacity-55 mb-2" />
-              <p className="text-sm font-semibold">No pods enrolled</p>
-              <p className="text-xs text-muted-foreground mt-0.5 max-w-xs">
-                {isTeacher
-                  ? "Get started by creating your first pod class."
-                  : "Join a classroom by entering an instructor code."}
-              </p>
-              {isStudent && (
-                <Link href="/pods" className="mt-4">
-                  <Button size="sm" className="flex items-center gap-1.5 font-bold shadow-md">
-                    <BookOpen className="h-4 w-4" />
-                    <span>Join Your First Class</span>
-                    <ArrowRight className="h-3.5 w-3.5 ml-1" />
-                  </Button>
-                </Link>
-              )}
-            </div>
-          ) : (
-            <div className="divide-y">
-              {pods.slice(0, 3).map((pod) => (
-                <div key={pod.id} className="flex items-center justify-between py-4 first:pt-0 last:pb-0">
-                  <div>
-                    <h4 className="font-semibold text-sm sm:text-base text-foreground">{pod.name}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Subject Code: {pod.subjectCode} | Section: {pod.section || '—'}
-                    </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pods.slice(0, 6).map((pod) => (
+              <div
+                key={pod.id}
+                className="rounded-2xl border bg-card p-5 shadow-sm flex flex-col justify-between space-y-4 hover:border-primary/30 transition-colors"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground uppercase tracking-wider">
+                      {pod.subjectCode || 'POD'}
+                    </span>
+                    {isTeacher && pod.joinCode && (
+                      <span className="text-xs font-mono font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                        Code: {pod.joinCode}
+                      </span>
+                    )}
                   </div>
-                  <Link href={`/pods/${pod.id}/members`}>
-                    <Button variant="ghost" size="sm" className="h-8 text-xs flex items-center gap-1 text-muted-foreground hover:text-foreground">
-                      <span>Roster</span>
-                      <ChevronRight className="h-3 w-3" />
-                    </Button>
+                  <h3 className="font-bold text-base text-foreground line-clamp-1">{pod.name}</h3>
+                  <p className="text-xs text-muted-foreground line-clamp-2">
+                    {pod.description || 'No description provided.'}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Users className="h-3.5 w-3.5" />
+                    <span>{pod._count?.enrollments || pod.enrollments?.length || 0} Students</span>
+                  </span>
+                  <Link href="/attendance">
+                    <span className="font-bold text-primary hover:underline">Open Pod →</span>
                   </Link>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Live Gateways or Info Box (Takes 1 col) */}
-        <div className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
-          <h3 className="text-lg font-bold text-foreground border-b pb-3 flex items-center gap-2">
-            <Radio className="h-5 w-5 text-indigo-500" />
-            {isTeacher ? 'Hardware Gateway Nodes' : 'Student Tips'}
-          </h3>
-
-          {isTeacher ? (
-            gateways.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-6">No gateway nodes configured.</p>
-            ) : (
-              <div className="space-y-3">
-                {gateways.slice(0, 4).map((g) => (
-                  <div key={g.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
-                    <div>
-                      <p className="text-xs font-semibold text-foreground truncate max-w-[120px]">{g.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{g.classroom}</p>
-                    </div>
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[8px] font-bold ${
-                        g.status === 'ONLINE' ? 'bg-emerald-500/15 text-emerald-500' : 'bg-red-500/15 text-red-500'
-                      }`}
-                    >
-                      {g.status === 'ONLINE' && (
-                        <span className="relative flex h-1.5 w-1.5 shrink-0">
-                          <span className="animate-sonar absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
-                        </span>
-                      )}
-                      <span>{g.status}</span>
-                    </span>
-                  </div>
-                ))}
               </div>
-            )
-          ) : (
-            <div className="space-y-4 text-xs text-muted-foreground leading-relaxed">
-              <div className="flex gap-2.5">
-                <AlertCircle className="h-5 w-5 text-primary shrink-0" />
-                <p>
-                  Confirm you check in within the session duration. Expired sessions cannot be checked in to.
-                </p>
-              </div>
-              <div className="flex gap-2.5">
-                <AlertCircle className="h-5 w-5 text-indigo-500 shrink-0" />
-                <p>
-                  To verify your attendance automatically, make sure your mobile device Bluetooth is switched on.
-                </p>
-              </div>
-              <div className="flex gap-2.5">
-                <AlertCircle className="h-5 w-5 text-emerald-500 shrink-0" />
-                <p>
-                  Check the Bell notification icon at top right for real-time alerts when a teacher starts class.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -4,18 +4,15 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
+import { UserAvatar } from '@/components/ui/avatar';
 import { apiClient } from '@/lib/api-client';
 import {
   User,
-  Mail,
-  Shield,
   Moon,
   Sun,
   Laptop,
   Check,
   LogOut,
-  HelpCircle,
-  Target,
   AlertTriangle,
   Loader2,
   Phone,
@@ -23,6 +20,7 @@ import {
   Send,
   CheckCircle2,
   AlertCircle,
+  Sparkles,
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -31,28 +29,39 @@ export default function SettingsPage() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-  // WhatsApp & Phone State
+  // Profile Form State
+  const [name, setName] = useState(user?.name || '');
   const [phone, setPhone] = useState(user?.phone || '+916380221196');
-  const [savingPhone, setSavingPhone] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string>((user as any)?.avatarUrl || '');
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  // WhatsApp Testing State
   const [testingWhatsApp, setTestingWhatsApp] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
-    if (user?.phone) {
-      setPhone(user.phone);
+    if (user) {
+      setName(user.name || '');
+      if (user.phone) setPhone(user.phone);
+      if ((user as any).avatarUrl) setAvatarUrl((user as any).avatarUrl);
     }
-  }, [user?.phone]);
+  }, [user]);
 
-  const handleSavePhone = async () => {
-    setSavingPhone(true);
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingProfile(true);
     setFeedback(null);
     try {
-      await apiClient.patch('/auth/profile', { phone });
-      setFeedback({ type: 'success', text: 'WhatsApp phone number saved successfully!' });
+      await apiClient.patch('/auth/profile', {
+        name,
+        phone,
+        avatarUrl: avatarUrl || undefined,
+      });
+      setFeedback({ type: 'success', text: 'Profile details saved successfully!' });
     } catch (err: any) {
-      setFeedback({ type: 'error', text: err?.message || 'Failed to update phone number.' });
+      setFeedback({ type: 'error', text: err?.message || 'Failed to update profile.' });
     } finally {
-      setSavingPhone(false);
+      setSavingProfile(false);
     }
   };
 
@@ -64,7 +73,7 @@ export default function SettingsPage() {
       if (res?.data?.success || res?.success) {
         setFeedback({
           type: 'success',
-          text: `WhatsApp test notification delivered to ${phone}! Check your phone.`,
+          text: `WhatsApp test notification delivered to ${phone}! Check WhatsApp.`,
         });
       } else {
         setFeedback({
@@ -91,21 +100,21 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto pb-12">
+    <div className="space-y-6 max-w-4xl mx-auto pb-16">
       {/* Header */}
       <div className="border-b pb-5">
-        <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
           Settings
         </h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Manage your user profile details, WhatsApp automation alerts, and theme preferences.
+        <p className="text-muted-foreground mt-1 text-xs sm:text-sm">
+          Manage your user profile, WhatsApp automation alerts, theme preferences, and security.
         </p>
       </div>
 
       {/* Alert Feedback Banner */}
       {feedback && (
         <div
-          className={`flex items-center justify-between p-4 rounded-xl border text-xs font-semibold animate-in fade-in duration-200 ${
+          className={`flex items-center justify-between p-4 rounded-2xl border text-xs font-semibold animate-in fade-in duration-200 ${
             feedback.type === 'success'
               ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600'
               : 'bg-destructive/10 border-destructive/30 text-destructive'
@@ -125,59 +134,95 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Profile Section */}
-      <div className="rounded-xl border bg-card p-6 shadow-sm space-y-6">
-        <h3 className="text-lg font-bold border-b pb-2">User Profile</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="flex flex-col items-center justify-center p-4 bg-muted/20 border rounded-xl">
-            <div className="h-16 w-16 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold text-xl mb-3">
-              {user?.name ? user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'CP'}
-            </div>
-            <p className="font-bold text-sm text-foreground">{user?.name || 'Loading...'}</p>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">{user?.role}</p>
+      {/* 1. PROFILE SECTION */}
+      <div className="rounded-2xl border bg-card p-6 shadow-sm space-y-6">
+        <div className="flex items-center justify-between border-b pb-3">
+          <div className="flex items-center gap-2">
+            <User className="h-5 w-5 text-primary" />
+            <h2 className="text-base sm:text-lg font-bold text-foreground">User Profile</h2>
           </div>
-
-          <div className="md:col-span-2 space-y-4 justify-center flex flex-col">
-            <div className="flex items-center gap-3">
-              <User className="h-4 w-4 text-muted-foreground" />
-              <div>
-                <span className="text-xs text-muted-foreground block">Full Name</span>
-                <span className="text-sm font-semibold">{user?.name || '—'}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <Mail className="h-4 w-4 text-muted-foreground" />
-              <div>
-                <span className="text-xs text-muted-foreground block">Email Address</span>
-                <span className="text-sm font-semibold">{user?.email || '—'}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <Shield className="h-4 w-4 text-muted-foreground" />
-              <div>
-                <span className="text-xs text-muted-foreground block">System Role</span>
-                <span className="text-sm font-semibold capitalize">{user?.role?.toLowerCase() || '—'}</span>
-              </div>
-            </div>
-          </div>
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-primary/10 text-primary border border-primary/20 uppercase tracking-wider">
+            {user?.role}
+          </span>
         </div>
+
+        <form onSubmit={handleSaveProfile} className="space-y-6">
+          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+            {/* Avatar Preview */}
+            <div className="flex flex-col items-center gap-2">
+              <UserAvatar name={name || user?.name} avatarUrl={avatarUrl} role={user?.role} size="2xl" />
+              <span className="text-[10px] font-semibold text-muted-foreground">Profile Avatar</span>
+            </div>
+
+            {/* Profile Inputs */}
+            <div className="flex-1 w-full space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                    className="w-full h-10 px-3 rounded-xl border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={user?.email || ''}
+                    disabled
+                    className="w-full h-10 px-3 rounded-xl border bg-muted/40 text-sm text-muted-foreground cursor-not-allowed"
+                  />
+                </div>
+              </div>
+
+              {/* Avatar URL / Preset selection */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                  Profile Picture URL (Optional)
+                </label>
+                <input
+                  type="url"
+                  value={avatarUrl}
+                  onChange={(e) => setAvatarUrl(e.target.value)}
+                  placeholder="https://example.com/avatar.jpg"
+                  className="w-full h-10 px-3 rounded-xl border bg-background text-xs sm:text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button type="submit" disabled={savingProfile} size="sm" className="font-bold shadow-md gap-1.5">
+                  {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  <span>Save Profile</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </form>
       </div>
 
-      {/* WhatsApp Automation & Reports Section */}
-      <div className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
-        <div className="flex items-center gap-2 border-b pb-2">
+      {/* 2. WHATSAPP AUTOMATION & REPORTS SECTION */}
+      <div className="rounded-2xl border bg-card p-6 shadow-sm space-y-4">
+        <div className="flex items-center gap-2 border-b pb-3">
           <MessageSquare className="h-5 w-5 text-emerald-500" />
-          <h3 className="text-lg font-bold">WhatsApp Automation & Reports</h3>
+          <h2 className="text-base sm:text-lg font-bold text-foreground">WhatsApp Attendance Alerts</h2>
         </div>
-        <p className="text-xs text-muted-foreground">
-          When an attendance session completes, ClassPod automatically generates Excel/PDF reports and sends a real-time summary to your WhatsApp.
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          When an attendance session concludes, ClassPod automatically generates Excel/PDF reports and delivers an instant executive summary to your WhatsApp.
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-          <div className="md:col-span-2 space-y-2">
-            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+          <div className="sm:col-span-2 space-y-2">
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
               <Phone className="h-3.5 w-3.5 text-emerald-600" />
-              <span>WhatsApp Phone Number (with country code)</span>
+              <span>Target WhatsApp Number (International format)</span>
             </label>
             <div className="flex gap-2">
               <input
@@ -185,21 +230,20 @@ export default function SettingsPage() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="+916380221196"
-                className="flex-1 px-3 py-2 text-sm rounded-lg border bg-background text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                className="flex-1 h-10 px-3 rounded-xl border bg-background text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary"
               />
               <Button
-                onClick={handleSavePhone}
-                disabled={savingPhone}
-                variant="default"
+                onClick={handleSaveProfile}
+                disabled={savingProfile}
+                variant="secondary"
                 size="sm"
-                className="gap-1.5"
+                className="font-bold h-10 px-4"
               >
-                {savingPhone ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                <span>Save</span>
+                Save
               </Button>
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Example format: <code className="bg-muted px-1 rounded text-primary">+916380221196</code>
+              Configured recipient: <code className="bg-muted px-1.5 py-0.5 rounded text-primary font-mono">{phone}</code>
             </p>
           </div>
 
@@ -209,7 +253,7 @@ export default function SettingsPage() {
               disabled={testingWhatsApp}
               variant="secondary"
               size="sm"
-              className="gap-2 border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 h-10 w-full"
+              className="h-10 w-full gap-2 border border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 font-bold"
             >
               {testingWhatsApp ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -222,43 +266,19 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Onboarding Preferences */}
-      {((user as any)?.heardFrom || (user as any)?.onboardingReason) && (
-        <div className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
-          <h3 className="text-lg font-bold border-b pb-2">Onboarding Preferences</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {(user as any)?.heardFrom && (
-              <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/20">
-                <HelpCircle className="h-4 w-4 text-primary shrink-0" />
-                <div>
-                  <span className="text-xs text-muted-foreground block">How you found us</span>
-                  <span className="text-sm font-semibold">{(user as any).heardFrom}</span>
-                </div>
-              </div>
-            )}
-            {(user as any)?.onboardingReason && (
-              <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/20">
-                <Target className="h-4 w-4 text-primary shrink-0" />
-                <div>
-                  <span className="text-xs text-muted-foreground block">Primary Goal</span>
-                  <span className="text-sm font-semibold">{(user as any).onboardingReason}</span>
-                </div>
-              </div>
-            )}
-          </div>
+      {/* 3. APPEARANCE & THEME SETTINGS */}
+      <div className="rounded-2xl border bg-card p-6 shadow-sm space-y-4">
+        <div className="flex items-center gap-2 border-b pb-3">
+          <Sparkles className="h-5 w-5 text-primary" />
+          <h2 className="text-base sm:text-lg font-bold text-foreground">App Appearance</h2>
         </div>
-      )}
-
-      {/* Themes Settings */}
-      <div className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
-        <h3 className="text-lg font-bold border-b pb-2">App Appearance</h3>
-        <p className="text-xs text-muted-foreground">Select how ClassPod looks on your device.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+        <p className="text-xs text-muted-foreground">Select how ClassPod renders on your screen.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
           {(
             [
               { id: 'light', label: 'Light Mode', icon: Sun },
               { id: 'dark', label: 'Dark Mode', icon: Moon },
-              { id: 'system', label: 'System', icon: Laptop },
+              { id: 'system', label: 'System Theme', icon: Laptop },
             ] as const
           ).map((t) => {
             const isSelected = theme === t.id;
@@ -269,7 +289,7 @@ export default function SettingsPage() {
                 className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all ${
                   isSelected
                     ? 'border-primary bg-primary/10 text-primary font-bold shadow-sm'
-                    : 'border-muted hover:border-muted-foreground/30 hover:bg-muted/50'
+                    : 'border-muted hover:border-muted-foreground/30 hover:bg-muted/40'
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -283,10 +303,10 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Account Actions / Logout Section */}
-      <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-6 shadow-sm space-y-4">
+      {/* 4. ACCOUNT MANAGEMENT & SIGN OUT */}
+      <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-6 shadow-sm space-y-4">
         <div>
-          <h3 className="text-lg font-bold text-destructive">Account Management</h3>
+          <h2 className="text-base sm:text-lg font-bold text-destructive">Account Management</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
             Sign out of your active session on this device.
           </p>
@@ -299,7 +319,7 @@ export default function SettingsPage() {
               <span>Confirm Sign Out</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              Are you sure you want to log out? You will need your credentials to log back in.
+              Are you sure you want to log out? You will need your credentials to access your workspace.
             </p>
             <div className="flex items-center gap-2 pt-1">
               <Button
@@ -307,7 +327,7 @@ export default function SettingsPage() {
                 disabled={isLoggingOut}
                 variant="destructive"
                 size="sm"
-                className="gap-1.5"
+                className="gap-1.5 font-bold"
               >
                 {isLoggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
                 <span>Yes, Sign Out</span>
@@ -327,7 +347,7 @@ export default function SettingsPage() {
             onClick={() => setShowLogoutConfirm(true)}
             variant="secondary"
             size="sm"
-            className="border-destructive/30 text-destructive hover:bg-destructive hover:text-destructive-foreground gap-2"
+            className="border-destructive/30 text-destructive hover:bg-destructive hover:text-destructive-foreground gap-2 font-bold"
           >
             <LogOut className="h-4 w-4" />
             <span>Sign Out</span>
