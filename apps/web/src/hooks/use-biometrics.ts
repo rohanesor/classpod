@@ -75,31 +75,56 @@ export function useBiometrics() {
           const optRes = await apiClient.get<any>('/auth/biometrics/options');
           const serverOptions = optRes.data;
 
-          const challengeBytes = Uint8Array.from(atob(serverOptions.challenge.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
-          const userIdBytes = Uint8Array.from(atob(serverOptions.user.id.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+          // Decode base64url challenge
+          const rawChallenge = (serverOptions.challenge || '').replace(/-/g, '+').replace(/_/g, '/');
+          const paddedChallenge = rawChallenge.padEnd(rawChallenge.length + (4 - (rawChallenge.length % 4)) % 4, '=');
+          const challengeBytes = Uint8Array.from(atob(paddedChallenge), (c) => c.charCodeAt(0));
+
+          // User ID bytes
+          const rawUserId = (serverOptions.user?.id || 'classpod_user').replace(/-/g, '+').replace(/_/g, '/');
+          const paddedUserId = rawUserId.padEnd(rawUserId.length + (4 - (rawUserId.length % 4)) % 4, '=');
+          const userIdBytes = Uint8Array.from(atob(paddedUserId), (c) => c.charCodeAt(0));
+
+          const currentHost = window.location.hostname;
+          const isIpAddress = /^[0-9.]+$/.test(currentHost);
+          const rpId = isIpAddress ? undefined : (currentHost || 'classpod.duckdns.org');
 
           const credential = (await navigator.credentials.create({
             publicKey: {
               challenge: challengeBytes,
-              rp: serverOptions.rp,
+              rp: {
+                name: 'ClassPod Attendance Security',
+                ...(rpId ? { id: rpId } : {}),
+              },
               user: {
                 id: userIdBytes,
-                name: serverOptions.user.name,
-                displayName: serverOptions.user.displayName,
+                name: serverOptions.user?.name || 'student@classpod.edu',
+                displayName: serverOptions.user?.displayName || 'Student',
               },
-              pubKeyCredParams: serverOptions.pubKeyCredParams,
-              authenticatorSelection: serverOptions.authenticatorSelection,
-              timeout: serverOptions.timeout,
-              attestation: serverOptions.attestation,
+              pubKeyCredParams: [
+                { alg: -7, type: 'public-key' },  // ES256
+                { alg: -257, type: 'public-key' }, // RS256
+              ],
+              authenticatorSelection: {
+                authenticatorAttachment: 'platform',
+                userVerification: 'required',
+                residentKey: 'preferred',
+              },
+              timeout: 60000,
+              attestation: 'none',
             },
           })) as any;
 
           if (credential && credential.id) {
             credentialId = credential.id;
-            publicKeyHex = credential.rawId ? Array.from(new Uint8Array(credential.rawId)).map(b => b.toString(16).padStart(2, '0')).join('') : '';
+            publicKeyHex = credential.rawId
+              ? Array.from(new Uint8Array(credential.rawId))
+                  .map((b) => b.toString(16).padStart(2, '0'))
+                  .join('')
+              : '';
           }
-        } catch {
-          // Hardware/browser prompt fallback
+        } catch (webauthnErr: any) {
+          console.warn('WebAuthn registration error:', webauthnErr);
         }
       }
 
@@ -159,15 +184,20 @@ export function useBiometrics() {
           const challenge = new Uint8Array(32);
           window.crypto.getRandomValues(challenge);
 
+          const currentHost = window.location.hostname;
+          const isIpAddress = /^[0-9.]+$/.test(currentHost);
+          const rpId = isIpAddress ? undefined : (currentHost || 'classpod.duckdns.org');
+
           await navigator.credentials.get({
             publicKey: {
               challenge,
               timeout: 30000,
               userVerification: 'required',
+              ...(rpId ? { rpId } : {}),
             },
           });
-        } catch {
-          // Silently proceed with assertion payload
+        } catch (getErr) {
+          console.warn('WebAuthn verify prompt error:', getErr);
         }
       }
 

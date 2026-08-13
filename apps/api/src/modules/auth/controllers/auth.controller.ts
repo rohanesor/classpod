@@ -208,8 +208,13 @@ export class AuthController {
 
   @Get('biometrics/options')
   @UseGuards(JwtAuthGuard)
-  async getBiometricRegistrationOptions(@CurrentUser() user: any): Promise<ApiEnvelope<any>> {
-    const options = await this.biometricsService.generateRegistrationOptions(user.id);
+  async getBiometricRegistrationOptions(
+    @CurrentUser() user: any,
+    @Req() req: Request,
+  ): Promise<ApiEnvelope<any>> {
+    const hostHeader = (req.headers['x-forwarded-host'] || req.headers.host || '') as string;
+    const hostname = hostHeader.split(':')[0];
+    const options = await this.biometricsService.generateRegistrationOptions(user.id, hostname);
     const context = this.requestContextService.getContext();
     return {
       data: options,

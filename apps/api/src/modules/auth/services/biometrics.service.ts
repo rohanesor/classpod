@@ -20,7 +20,7 @@ export class BiometricsService {
   /**
    * Generates a cryptographic WebAuthn registration challenge for the student.
    */
-  async generateRegistrationOptions(userId: string) {
+  async generateRegistrationOptions(userId: string, clientHostname?: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -31,11 +31,20 @@ export class BiometricsService {
 
     const challenge = crypto.randomBytes(32).toString('base64url');
 
+    let rpId = 'classpod.duckdns.org';
+    if (clientHostname && typeof clientHostname === 'string') {
+      const parts = clientHostname.split(':');
+      const cleanHost = (parts[0] || '').trim();
+      if (cleanHost === 'localhost' || cleanHost.includes('.') || cleanHost === '127.0.0.1') {
+        rpId = cleanHost;
+      }
+    }
+
     return {
       challenge,
       rp: {
         name: 'ClassPod Attendance Security',
-        id: 'classpod.duckdns.org',
+        id: rpId,
       },
       user: {
         id: Buffer.from(user.id).toString('base64url'),
