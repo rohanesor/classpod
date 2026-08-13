@@ -56,7 +56,7 @@ export default function DownloadPage() {
           </a>
 
           <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
-            <span>Version: v2.1.0-release</span>
+            <span>Version: v2.2.0-release</span>
             <span>Android APK & iOS IPA</span>
           </div>
         </div>
