@@ -40,6 +40,6 @@ jobs:
             git pull origin main
             cp -n .env.production .env || true
             docker compose up -d --build
-            docker exec classpod-api npx prisma migrate deploy --schema apps/api/prisma/schema.prisma || docker exec classpod-api npx prisma db push --accept-data-loss --schema apps/api/prisma/schema.prisma
+            docker exec classpod-api npx prisma migrate deploy --schema prisma/schema.prisma || docker exec classpod-api npx prisma db push --accept-data-loss --schema prisma/schema.prisma
             docker compose ps
 
