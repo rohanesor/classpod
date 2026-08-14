@@ -717,7 +717,8 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    const { challengeToken: _token, ...sanitizedSession } = firstSession;
+    const sanitizedSession = { ...firstSession };
+    delete (sanitizedSession as any).challengeToken;
 
     return {
       session: sanitizedSession,

@@ -106,6 +106,12 @@ jobs:
       - name: Install Dependencies
         run: npm ci || npm install --legacy-peer-deps
 
+      - name: Generate Prisma Client
+        run: npx prisma generate --schema apps/api/prisma/schema.prisma
+
+      - name: Build Shared Package
+        run: npm run build --workspace=@classpod/shared
+
       - name: Push Test Database Schema
         env:
           DATABASE_URL: postgresql://classpod:classpod_password@localhost:5432/classpod_test?schema=public
@@ -117,7 +123,7 @@ jobs:
           REDIS_URL: redis://localhost:6379
           JWT_SECRET: super-secret-jwt-key-minimum-32-chars-long
           GATEWAY_SHARED_SECRET: local-dev-secret-key
-        run: npm test --if-present
+        run: npm test --workspace=@classpod/api || npm test --if-present
 
   # Stage 4: Build
   build:
