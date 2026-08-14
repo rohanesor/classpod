@@ -108,6 +108,7 @@ export default function HomePage() {
       let gatewayId = 'esp32-cam-node-1';
       let challengeToken =
         activeSession.session?.challengeToken || activeSession.challengeToken || 'CP123456';
+      let scannedRssi: number | undefined;
 
       // 1. Trigger Native OS Biometric Authentication
       setCheckinStep('Scan Fingerprint / Face ID on sensor...');
@@ -137,29 +138,35 @@ export default function HomePage() {
           await BleClient.initialize();
 
           let bleFound = false;
-          let scannedGatewayId = '';
 
+          // Scan with wide filter to ensure all Android BLE chipsets catch the advertisement
           await BleClient.requestLEScan(
             {
-              services: ['434c4153-5350-4f44-0000-000000000000'],
               allowDuplicates: false,
             },
             (result) => {
-              if (result.device) {
+              const name = (result.device?.name || result.localName || '').toLowerCase();
+              const uuids = (result.uuids || []).map((u: string) => u.toLowerCase());
+              if (
+                name.includes('classpod') ||
+                name.includes('gateway') ||
+                name.includes('esp32') ||
+                uuids.some((u) => u.includes('434c4153'))
+              ) {
                 bleFound = true;
-                scannedGatewayId = result.device.deviceId || 'esp32-cam-node-1';
+                scannedRssi = result.rssi;
               }
             }
           );
 
-          await new Promise((resolve) => setTimeout(resolve, 2500));
+          await new Promise((resolve) => setTimeout(resolve, 3500));
           await BleClient.stopLEScan();
 
           if (!bleFound) {
-            throw new Error('No ClassPod BLE Gateway detected nearby. You must be physically inside the classroom in range of the ESP32 to check in.');
+            throw new Error('No ClassPod BLE Gateway detected nearby. Please ensure the ESP32 gateway is powered on and within Bluetooth range.');
           }
 
-          gatewayId = scannedGatewayId || gatewayId;
+          gatewayId = 'esp32-cam-node-1';
         } catch (bleErr: any) {
           if (bleErr?.message?.includes('No ClassPod BLE Gateway')) {
             throw bleErr;
@@ -179,6 +186,7 @@ export default function HomePage() {
         biometricVerified: true,
         latitude,
         longitude,
+        bleRssi: scannedRssi,
       });
 
       setCheckinSuccess('🟢 Attendance Verified: PRESENT');

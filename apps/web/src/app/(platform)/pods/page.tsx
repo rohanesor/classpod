@@ -268,21 +268,32 @@ export default function PodsPage() {
         
         await bleClient.requestLEScan(
           {
-            services: ['434c4153-5350-4f44-0000-000000000000'],
+            allowDuplicates: false,
           },
           async (result: any) => {
             if (!isScanning) return;
-            window.console.log('[BLE] Scan result detected:', result);
+            const name = (result.device?.name || result.localName || '').toLowerCase();
+            const uuids = (result.uuids || []).map((u: string) => u.toLowerCase());
+
+            const isMatch =
+              name.includes('classpod') ||
+              name.includes('gateway') ||
+              name.includes('esp32') ||
+              uuids.some((u: string) => u.includes('434c4153'));
+
+            if (!isMatch) return;
+
+            window.console.log('[BLE] ClassPod Gateway detected:', result);
 
             // INSTANT DETECTION: Any broadcast from ClassPod gateway or matching service
             const gatewayId = result.device?.deviceId || 'esp32-cam-node-1';
-            const gatewayName = result.device?.name || 'ClassPod Gateway';
+            const gatewayName = result.device?.name || result.localName || 'ClassPod Gateway';
             const rssi = result.rssi || -60;
 
             setDetectedGateway({
               id: gatewayId,
               name: gatewayName,
-              challengeToken: activeSession.challengeToken || 'CP123456',
+              challengeToken: activeSession.session?.challengeToken || activeSession.challengeToken || 'CP123456',
               rssi: rssi,
             });
             setIsBluetoothEnabled(true);
@@ -453,27 +464,40 @@ export default function PodsPage() {
       }
 
       // 3. Scan for Native BLE Gateway (if mobile platform)
-      if (Capacitor.isNativePlatform() && bleStatus !== 'found') {
+      if (Capacitor.isNativePlatform()) {
         try {
           const bleModule = await import('@capacitor-community/bluetooth-le');
           const bleClient = bleModule.BleClient;
           await bleClient.initialize();
-          let scannedGatewayId = '';
+          let bleFound = false;
           await bleClient.requestLEScan(
-            { services: ['434c4153-5350-4f44-0000-000000000000'] },
+            {
+              allowDuplicates: false,
+            },
             (result: any) => {
-              if (result.device?.deviceId) {
-                scannedGatewayId = result.device.deviceId;
+              const name = (result.device?.name || result.localName || '').toLowerCase();
+              const uuids = (result.uuids || []).map((u: string) => u.toLowerCase());
+              if (
+                name.includes('classpod') ||
+                name.includes('gateway') ||
+                name.includes('esp32') ||
+                uuids.some((u: string) => u.includes('434c4153'))
+              ) {
+                bleFound = true;
               }
             }
           );
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          await new Promise((resolve) => setTimeout(resolve, 3500));
           await bleClient.stopLEScan();
-          if (scannedGatewayId) {
-            finalGatewayId = scannedGatewayId;
+          if (!bleFound && bleStatus !== 'found') {
+            throw new Error('No ClassPod BLE Gateway detected nearby. Please ensure the ESP32 gateway is powered on and within Bluetooth range.');
           }
-        } catch {
-          // Fallback to detected gateway
+          finalGatewayId = 'esp32-cam-node-1';
+        } catch (bleErr: any) {
+          if (bleErr?.message?.includes('No ClassPod BLE Gateway')) {
+            throw bleErr;
+          }
+          // Continue if already verified via previous scan
         }
       }
 
