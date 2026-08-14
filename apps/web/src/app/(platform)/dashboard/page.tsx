@@ -8,22 +8,20 @@ import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/ui/avatar';
 import { Capacitor } from '@capacitor/core';
 import { getInstallationUuid } from '@/lib/device-id';
+import { LocationService } from '@/lib/location.service';
 import {
   Users,
   GraduationCap,
-  Clock,
   Calendar,
+  Clock,
   ArrowRight,
   Loader2,
   PlayCircle,
   CheckCircle2,
   AlertCircle,
-  FileSpreadsheet,
-  Zap,
-  Plus,
   Fingerprint,
-  ShieldCheck,
-  Trash2,
+  FileSpreadsheet,
+  Plus,
 } from 'lucide-react';
 import { useBiometrics } from '@/hooks/use-biometrics';
 
@@ -32,13 +30,12 @@ export default function HomePage() {
   const biometrics = useBiometrics();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [bioRegistering, setBioRegistering] = useState(false);
-  const [bioSuccess, setBioSuccess] = useState<string | null>(null);
 
   // Core States
   const [pods, setPods] = useState<any[]>([]);
   const [activeSession, setActiveSession] = useState<any | null>(null);
   const [isCheckinLoading, setIsCheckinLoading] = useState(false);
+  const [checkinStep, setCheckinStep] = useState<string | null>(null);
   const [checkinSuccess, setCheckinSuccess] = useState<string | null>(null);
 
   const isTeacher = user?.role?.toUpperCase() === 'TEACHER';
@@ -58,25 +55,27 @@ export default function HomePage() {
         apiClient.get<any>('/attendance/active'),
       ];
 
-      const results = await Promise.all(promises);
-      const podsRes = results[0];
-      const activeSessionRes = results[1];
+      const [podsResult, activeResult] = await Promise.allSettled(promises);
 
-      setPods(podsRes.data || []);
-      setActiveSession(activeSessionRes.data || null);
+      if (podsResult && podsResult.status === 'fulfilled' && (podsResult.value as any)?.data) {
+        setPods((podsResult.value as any).data);
+      }
+
+      if (activeResult && activeResult.status === 'fulfilled' && (activeResult.value as any)?.data) {
+        setActiveSession((activeResult.value as any).data);
+      } else {
+        setActiveSession(null);
+      }
     } catch (err: any) {
-      setError(err?.message || 'Failed to load workspace data. Please refresh.');
+      setError(err?.message || 'Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
     fetchData();
-    const interval = window.setInterval(fetchData, 15000);
-    return () => window.clearInterval(interval);
-  }, [user, fetchData]);
+  }, [fetchData]);
 
   // Auto-register device installation UUID for students
   useEffect(() => {
@@ -93,39 +92,14 @@ export default function HomePage() {
     }
   }, [isStudent, user]);
 
-  // Register Fingerprint for Student
-  const handleRegisterFingerprint = async () => {
-    setBioRegistering(true);
-    setError(null);
-    setBioSuccess(null);
-    try {
-      await biometrics.registerFingerprint('Primary Student Fingerprint');
-      setBioSuccess('Fingerprint hardware ID registered and linked to your student account!');
-    } catch (err: any) {
-      setError(err?.message || 'Failed to register fingerprint.');
-    } finally {
-      setBioRegistering(false);
-    }
-  };
-
-  const handleRemoveFingerprint = async () => {
-    setError(null);
-    setBioSuccess(null);
-    try {
-      await biometrics.removeFingerprint();
-      setBioSuccess('Fingerprint credentials removed.');
-    } catch (err: any) {
-      setError(err?.message || 'Failed to remove fingerprint.');
-    }
-  };
-
-  // Check-in handler for Student
+  // Multi-Factor Attendance Verification for Student
   const handleCheckIn = async () => {
     if (!activeSession) return;
 
     setIsCheckinLoading(true);
     setError(null);
     setCheckinSuccess(null);
+    setCheckinStep('Initiating verification...');
 
     try {
       const sessionId = activeSession.session?.id || activeSession.id;
@@ -135,8 +109,28 @@ export default function HomePage() {
       let challengeToken =
         activeSession.session?.challengeToken || activeSession.challengeToken || 'CP123456';
 
-      // Scan for native BLE gateway if running on mobile device
+      // 1. Trigger Native OS Biometric Authentication
+      setCheckinStep('Scan Fingerprint / Face ID on sensor...');
+      const bioResult = await biometrics.authenticate('Touch sensor to verify attendance');
+      if (!bioResult.success) {
+        throw new Error(bioResult.error || 'OS biometric authentication failed. Please verify with fingerprint or Face ID.');
+      }
+
+      // 2. Acquire High-Accuracy GPS Location
+      setCheckinStep('Acquiring classroom GPS location...');
+      let latitude: number | undefined;
+      let longitude: number | undefined;
+      try {
+        const location = await LocationService.getCurrentLocation(8000);
+        latitude = location.latitude;
+        longitude = location.longitude;
+      } catch (locErr: any) {
+        throw new Error(locErr?.message || 'Location acquisition failed. Location permission is required.');
+      }
+
+      // 3. Scan for Native BLE Gateway (if mobile platform)
       if (Capacitor.isNativePlatform()) {
+        setCheckinStep('Verifying Bluetooth classroom beacon...');
         try {
           const bleModule = await import('@capacitor-community/bluetooth-le');
           const BleClient = bleModule.BleClient;
@@ -158,7 +152,7 @@ export default function HomePage() {
             }
           );
 
-          await new Promise((resolve) => setTimeout(resolve, 3000));
+          await new Promise((resolve) => setTimeout(resolve, 2500));
           await BleClient.stopLEScan();
 
           if (!bleFound) {
@@ -170,43 +164,31 @@ export default function HomePage() {
           if (bleErr?.message?.includes('No ClassPod BLE Gateway')) {
             throw bleErr;
           }
-          throw new Error('Bluetooth proximity check failed: ' + (bleErr?.message || 'Please ensure Bluetooth and Location are enabled on your phone.'));
+          throw new Error('Bluetooth proximity check failed: ' + (bleErr?.message || 'Please ensure Bluetooth is enabled.'));
         }
       }
 
-      // 2. Biometric Fingerprint Verification prompt
-      let biometricAssertion: any = null;
-      let biometricVerified = false;
-
-      if (biometrics.hasFingerprint) {
-        try {
-          biometricAssertion = await biometrics.promptVerification();
-          biometricVerified = true;
-        } catch {
-          throw new Error('Fingerprint verification cancelled or failed. Please scan your registered fingerprint to check in.');
-        }
-      }
-
+      // 4. Submit Multi-Factor Verification to Backend
+      setCheckinStep('Validating multi-factor security...');
       await apiClient.post('/attendance/checkin', {
         sessionId,
         gatewayId,
         challengeToken,
         deviceId,
         isMobileApp: Capacitor.isNativePlatform(),
-        biometricAssertion,
-        biometricVerified,
+        biometricVerified: true,
+        latitude,
+        longitude,
       });
 
-      setCheckinSuccess(
-        biometricVerified
-          ? 'Attendance verified with Fingerprint & BLE Proximity! 🛡️'
-          : 'Attendance check-in submitted successfully!'
-      );
+      setCheckinSuccess('🟢 Attendance Verified: PRESENT');
       fetchData();
     } catch (err: any) {
-      setError(err?.message || 'Failed to submit check-in. Please try again.');
+      const msg = err?.message || 'Verification failed. Please try again.';
+      setError(msg);
     } finally {
       setIsCheckinLoading(false);
+      setCheckinStep(null);
     }
   };
 
@@ -320,96 +302,6 @@ export default function HomePage() {
         </div>
       )}
 
-      {bioSuccess && (
-        <div className="flex items-center justify-between p-4 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 text-indigo-600 text-xs font-semibold">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 shrink-0" />
-            <span>{bioSuccess}</span>
-          </div>
-          <button
-            onClick={() => setBioSuccess(null)}
-            className="opacity-70 hover:opacity-100 font-bold ml-2"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* STUDENT BIOMETRIC FINGERPRINT REGISTRATION CARD */}
-      {isStudent && (
-        <div className="rounded-2xl border bg-card p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="p-3 rounded-2xl bg-indigo-500/10 text-indigo-600 shrink-0">
-              <Fingerprint className="h-7 w-7" />
-            </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-foreground">
-                  Biometric Fingerprint Hardware ID
-                </h3>
-                {biometrics.hasFingerprint ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                    <ShieldCheck className="h-3 w-3" />
-                    Enrolled & Linked
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20">
-                    Not Registered
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed max-w-xl">
-                {biometrics.hasFingerprint
-                  ? `Your ${biometrics.primaryCredential?.fingerprintName || 'Fingerprint'} is verified on this device. During attendance, touch your sensor to complete check-in.`
-                  : 'Enroll your fingerprint once to enable instant 1-touch hardware verified attendance check-ins.'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {biometrics.hasFingerprint ? (
-              <>
-                <Button
-                  onClick={handleRegisterFingerprint}
-                  disabled={bioRegistering}
-                  variant="secondary"
-                  className="h-10 px-4 font-bold text-xs gap-2"
-                >
-                  <Fingerprint className="h-3.5 w-3.5 text-indigo-500" />
-                  <span>Update Scan</span>
-                </Button>
-                <Button
-                  onClick={handleRemoveFingerprint}
-                  variant="ghost"
-                  className="h-10 px-3 font-bold text-xs text-destructive hover:bg-destructive/10"
-                  title="Remove Fingerprint"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </>
-            ) : (
-              <Button
-                onClick={handleRegisterFingerprint}
-                disabled={bioRegistering}
-                className="h-10 px-5 font-bold shadow-md gap-2 text-xs bg-indigo-600 hover:bg-indigo-700 text-white"
-              >
-                {bioRegistering ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Scanning Sensor...</span>
-                  </>
-                ) : (
-                  <>
-                    <Fingerprint className="h-4 w-4" />
-                    <span>Register Fingerprint</span>
-                  </>
-                )}
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* PRIMARY OPERATIONAL ACTION CARD */}
       {activeSession ? (
         <div className="relative overflow-hidden rounded-2xl border-2 border-primary bg-gradient-to-r from-primary/10 via-primary/5 to-background p-6 shadow-lg space-y-4">
@@ -436,32 +328,31 @@ export default function HomePage() {
               {isStudent && (
                 <Button
                   onClick={handleCheckIn}
-                  disabled={isCheckinLoading}
-                  className="h-11 px-6 font-bold shadow-lg gap-2 text-sm"
+                  disabled={isCheckinLoading || activeSession.decision?.status === 'PRESENT' || activeSession.decision?.status === 'VERIFIED'}
+                  className={`h-11 px-6 font-bold shadow-lg gap-2 text-sm ${
+                    activeSession.decision?.status === 'PRESENT' || activeSession.decision?.status === 'VERIFIED'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      : ''
+                  }`}
                 >
                   {isCheckinLoading ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Verifying Presence...</span>
+                      <span>{checkinStep || 'Verifying Presence...'}</span>
+                    </>
+                  ) : activeSession.decision?.status === 'PRESENT' || activeSession.decision?.status === 'VERIFIED' ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-white" />
+                      <span>Attendance Verified</span>
                     </>
                   ) : (
                     <>
-                      <Zap className="h-4 w-4" />
-                      <span>Check In Now</span>
+                      <Fingerprint className="h-4 w-4" />
+                      <span>Verify Attendance</span>
                     </>
                   )}
                 </Button>
               )}
-
-              <Link href="/attendance">
-                <Button
-                  variant={isStudent ? 'secondary' : 'default'}
-                  className="h-11 px-5 font-bold shadow-md gap-2"
-                >
-                  <span>Open Session Workspace</span>
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
             </div>
           </div>
         </div>

@@ -5,6 +5,7 @@ import { CreatePodDto } from '../dtos/create-pod.dto';
 import { UpdatePodDto } from '../dtos/update-pod.dto';
 import { POD_EVENT_NAMES, POD_AUDIT_ACTIONS } from '../constants/pod-events';
 import { PodStatus, EnrollmentStatus } from '@prisma/client';
+import { validateGeoBoundary } from '../utils/geo-boundary.util';
 
 function generateJoinCode(length = 7): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -23,6 +24,13 @@ export class PodsService {
   ) {}
 
   async create(teacherId: string, dto: CreatePodDto) {
+    if (dto.geoBoundary) {
+      const val = validateGeoBoundary(dto.geoBoundary);
+      if (!val.valid) {
+        throw new BadRequestException(val.error || 'Invalid classroom geospatial boundary.');
+      }
+    }
+
     let joinCode = '';
     let isUnique = false;
 
@@ -43,6 +51,7 @@ export class PodsService {
         description: dto.description,
         semester: dto.semester,
         section: dto.section,
+        geoBoundary: dto.geoBoundary ? (dto.geoBoundary as any) : undefined,
         joinCode,
         teacherId,
         status: PodStatus.ACTIVE,
@@ -82,6 +91,15 @@ export class PodsService {
       throw new ForbiddenException('You do not own this pod');
     }
 
+    if (dto.geoBoundary !== undefined) {
+      if (dto.geoBoundary !== null) {
+        const val = validateGeoBoundary(dto.geoBoundary);
+        if (!val.valid) {
+          throw new BadRequestException(val.error || 'Invalid classroom geospatial boundary.');
+        }
+      }
+    }
+
     const updatedPod = await this.prisma.pod.update({
       where: { id },
       data: {
@@ -90,6 +108,7 @@ export class PodsService {
         description: dto.description,
         semester: dto.semester,
         section: dto.section,
+        geoBoundary: dto.geoBoundary !== undefined ? (dto.geoBoundary as any) : undefined,
       },
     });
 

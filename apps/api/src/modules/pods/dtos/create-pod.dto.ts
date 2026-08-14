@@ -19,4 +19,7 @@ export class CreatePodDto {
   @IsString()
   @IsOptional()
   section?: string;
+
+  @IsOptional()
+  geoBoundary?: { lat: number; lng: number }[];
 }

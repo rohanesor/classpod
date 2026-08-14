@@ -34,7 +34,6 @@ model User {
   notifications       Notification[]
   automationRuns      AutomationRun[]
   registeredDevice    RegisteredDevice?
-  biometricCredentials BiometricCredential[]
 }
 
 model RegisteredDevice {
@@ -50,22 +49,6 @@ model RegisteredDevice {
 
   @@index([userId])
   @@index([deviceId])
-}
-
-model BiometricCredential {
-  id              String    @id @default(cuid())
-  userId          String
-  credentialId    String    @unique
-  publicKey       String
-  fingerprintName String    @default("Primary Fingerprint")
-  algorithm       String    @default("ES256")
-  registeredAt    DateTime  @default(now())
-  lastVerifiedAt  DateTime?
-
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([credentialId])
 }
 
 enum PodStatus {
@@ -87,6 +70,7 @@ model Pod {
   teacherId   String
   semester    String?
   section     String?
+  geoBoundary Json?               // Array of 8 vertex pairs: [{ lat: Float, lng: Float }]
   status      PodStatus           @default(ACTIVE)
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt
@@ -168,6 +152,8 @@ enum AttendanceDecisionStatus {
   PENDING
   CHECKED_IN
   VERIFIED
+  PRESENT
+  NOT_PRESENT
   REJECTED
   EXPIRED
 }
@@ -300,6 +286,7 @@ enum SignalSource {
   PERSON_COUNT
   MANUAL
   BIOMETRIC
+  GEOLOCATION
 }
 
 model VerificationSignal {

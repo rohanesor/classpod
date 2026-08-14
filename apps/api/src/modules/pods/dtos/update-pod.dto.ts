@@ -21,4 +21,7 @@ export class UpdatePodDto {
   @IsString()
   @IsOptional()
   section?: string;
+
+  @IsOptional()
+  geoBoundary?: { lat: number; lng: number }[];
 }

@@ -19,7 +19,7 @@ import {
 import { StartSessionDto } from '../dtos/start-session.dto';
 import { CheckinDto } from '../dtos/checkin.dto';
 import { ATTENDANCE_EVENT_NAMES, ATTENDANCE_AUDIT_ACTIONS } from '../constants/attendance-events';
-import { BiometricsService } from '../../auth/services/biometrics.service';
+import { isPointInsideClassroom, GeoPoint } from '../../pods/utils/geo-boundary.util';
 
 @Injectable()
 export class AttendanceService implements OnModuleInit, OnModuleDestroy {
@@ -28,7 +28,6 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventLogger: EventLoggerService,
-    private readonly biometricsService: BiometricsService,
   ) {}
 
   onModuleInit() {
@@ -238,13 +237,18 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
   /**
    * Records student check-in.
    */
+  /**
+   * Records student check-in through multi-factor verification:
+   * Device Registration + Active Session + Biometric Verification + BLE Proximity + Geospatial Point-in-Polygon = Attendance Decision
+   */
   async checkin(studentId: string, dto: CheckinDto) {
     // Run lazy check.
     await this.lazyExpireCheck(dto.sessionId);
 
-    // Find session.
+    // Find session and classroom (pod).
     const session = await this.prisma.attendanceSession.findUnique({
       where: { id: dto.sessionId },
+      include: { pod: true },
     });
     if (!session) {
       throw new NotFoundException('Attendance session not found');
@@ -252,40 +256,10 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
 
     // Verify session is active.
     if (session.status !== AttendanceSessionStatus.ACTIVE) {
-      throw new BadRequestException('Session is closed or expired');
+      throw new BadRequestException('SESSION_NOT_ACTIVE');
     }
 
-    // 1. Enforce Mobile App requirement
-    if (!dto.isMobileApp) {
-      throw new BadRequestException('ClassPod attendance requires the mobile app because BLE proximity verification is required.');
-    }
-
-    // 2. Enforce Device Registration & Binding
-    const registeredDevice = await this.prisma.registeredDevice.findUnique({
-      where: { userId: studentId },
-    });
-
-    if (!registeredDevice || registeredDevice.deviceId !== dto.deviceId) {
-      throw new BadRequestException('Device not registered for this account.');
-    }
-
-    // 3. Mandatory BLE Challenge Token & Gateway Proximity Verification
-    if (!dto.gatewayId || !dto.challengeToken) {
-      throw new BadRequestException('BLE proximity verification failed. Please move closer to the ClassPod gateway.');
-    }
-
-    if (session.challengeToken !== dto.challengeToken) {
-      throw new BadRequestException('BLE proximity verification failed. Please move closer to the ClassPod gateway.');
-    }
-
-    const gateway = await this.prisma.gateway.findUnique({
-      where: { id: dto.gatewayId },
-    });
-    if (!gateway) {
-      throw new BadRequestException('BLE proximity verification failed. Please move closer to the ClassPod gateway.');
-    }
-
-    // Find student decision.
+    // Find student decision record.
     const decision = await this.prisma.attendanceDecision.findUnique({
       where: {
         sessionId_studentId: {
@@ -300,49 +274,82 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (
-      decision.status === AttendanceDecisionStatus.CHECKED_IN ||
-      decision.status === AttendanceDecisionStatus.VERIFIED
+      decision.status === AttendanceDecisionStatus.PRESENT ||
+      decision.status === AttendanceDecisionStatus.VERIFIED ||
+      decision.status === AttendanceDecisionStatus.CHECKED_IN
     ) {
       throw new BadRequestException('Already checked in');
     }
 
-    // 4. Biometric Fingerprint Hardware Verification Check
-    const enrolledBiometrics = await this.prisma.biometricCredential.findMany({
+    let failureReason: string | null = null;
+
+    // Factor 1: Device Registration & Binding
+    const registeredDevice = await this.prisma.registeredDevice.findUnique({
       where: { userId: studentId },
     });
-
-    let isBiometricVerified = false;
-    let biometricMetadata: any = null;
-
-    if (enrolledBiometrics.length > 0) {
-      if (!dto.biometricAssertion && !dto.biometricVerified) {
-        throw new BadRequestException('Biometric fingerprint verification required. Please scan your registered fingerprint.');
-      }
-
-      const bioResult = await this.biometricsService.verifyBiometricAssertion(studentId, dto.biometricAssertion);
-      if (!bioResult.verified) {
-        throw new BadRequestException('Fingerprint verification failed. Scanned biometric does not match enrolled credential.');
-      }
-
-      isBiometricVerified = true;
-      biometricMetadata = {
-        credentialId: bioResult.credentialId,
-        fingerprintName: bioResult.fingerprintName,
-        verifiedAt: bioResult.verifiedAt,
-      };
-    } else if (dto.biometricAssertion || dto.biometricVerified) {
-      isBiometricVerified = true;
-      biometricMetadata = {
-        verifiedAt: new Date(),
-        fingerprintName: 'Device Biometric (Touch ID/Android)',
-      };
+    const isDeviceRegistered = !!registeredDevice && registeredDevice.deviceId === dto.deviceId;
+    if (!isDeviceRegistered) {
+      failureReason = 'DEVICE_NOT_REGISTERED';
     }
 
-    const nextStatus = isBiometricVerified
-      ? AttendanceDecisionStatus.VERIFIED
-      : AttendanceDecisionStatus.CHECKED_IN;
+    // Factor 2: BLE Challenge Token & Gateway Proximity
+    let isBleVerified = false;
+    if (dto.gatewayId && dto.challengeToken && session.challengeToken === dto.challengeToken) {
+      const gateway = await this.prisma.gateway.findUnique({
+        where: { id: dto.gatewayId },
+      });
+      if (gateway) {
+        isBleVerified = true;
+      }
+    }
+    if (!isBleVerified && !failureReason) {
+      failureReason = 'BLE_NOT_VERIFIED';
+    }
 
-    // Update status to VERIFIED or CHECKED_IN.
+    // Factor 3: OS Biometric Authentication
+    const isBiometricVerified = dto.biometricVerified === true;
+    if (!isBiometricVerified && !failureReason) {
+      failureReason = 'BIOMETRIC_FAILED';
+    }
+
+    // Factor 4: Geospatial Point-in-Polygon Boundary Verification
+    let isGeoVerified = false;
+    const classroomBoundary = session.pod?.geoBoundary as GeoPoint[] | null | undefined;
+
+    if (classroomBoundary && Array.isArray(classroomBoundary) && classroomBoundary.length >= 3) {
+      if (
+        typeof dto.latitude !== 'number' ||
+        typeof dto.longitude !== 'number' ||
+        isNaN(dto.latitude) ||
+        isNaN(dto.longitude)
+      ) {
+        isGeoVerified = false;
+        if (!failureReason) failureReason = 'LOCATION_UNAVAILABLE';
+      } else {
+        isGeoVerified = isPointInsideClassroom(dto.latitude, dto.longitude, classroomBoundary);
+        if (!isGeoVerified && !failureReason) {
+          failureReason = 'OUTSIDE_CLASSROOM';
+        }
+      }
+    } else {
+      // If no geospatial boundary is configured on the pod, location requirement is satisfied
+      isGeoVerified = true;
+    }
+
+    const allFactorsPassed =
+      isDeviceRegistered && isBleVerified && isBiometricVerified && isGeoVerified;
+
+    const finalStatus = allFactorsPassed
+      ? AttendanceDecisionStatus.PRESENT
+      : AttendanceDecisionStatus.NOT_PRESENT;
+
+    const explanation = allFactorsPassed
+      ? 'Multi-factor attendance verified: Biometric, BLE & Geospatial boundary passed.'
+      : (failureReason || 'Verification failed');
+
+    const verifiedAt = new Date();
+
+    // Update attendance decision in database
     const updatedDecision = await this.prisma.attendanceDecision.update({
       where: {
         sessionId_studentId: {
@@ -351,33 +358,60 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
         },
       },
       data: {
-        status: nextStatus,
-        explanation: isBiometricVerified
-          ? 'Biometric fingerprint & BLE proximity verified'
-          : 'BLE proximity verified',
-        respondedAt: new Date(),
+        status: finalStatus,
+        explanation,
+        respondedAt: verifiedAt,
       },
     });
 
-    // Record verification signal
-    if (isBiometricVerified) {
-      await this.prisma.verificationSignal.create({
-        data: {
+    // Record multi-factor verification signals
+    await this.prisma.verificationSignal.createMany({
+      data: [
+        {
+          attendanceDecisionId: updatedDecision.id,
+          source: 'CHECK_IN',
+          payload: { deviceId: dto.deviceId, isMobileApp: !!dto.isMobileApp, timestamp: verifiedAt },
+        },
+        {
+          attendanceDecisionId: updatedDecision.id,
+          source: 'BLE',
+          payload: { verified: isBleVerified, gatewayId: dto.gatewayId, bleRssi: dto.bleRssi, timestamp: verifiedAt },
+        },
+        {
           attendanceDecisionId: updatedDecision.id,
           source: 'BIOMETRIC',
-          payload: biometricMetadata || { verified: true },
+          payload: { verified: isBiometricVerified, timestamp: verifiedAt },
         },
-      });
-    }
+        {
+          attendanceDecisionId: updatedDecision.id,
+          source: 'GEOLOCATION',
+          payload: {
+            verified: isGeoVerified,
+            inBoundary: isGeoVerified,
+            hasBoundary: !!(classroomBoundary && Array.isArray(classroomBoundary) && classroomBoundary.length >= 3),
+            timestamp: verifiedAt,
+          },
+        },
+      ],
+    });
 
-    // Log events.
+    // Persist complete verification audit record
     this.eventLogger.audit(ATTENDANCE_AUDIT_ACTIONS.CHECKIN, {
       actorUserId: studentId,
       entityType: 'AttendanceDecision',
       entityId: updatedDecision.id,
+      studentId,
+      classroomId: session.podId,
       sessionId: dto.sessionId,
-      gatewayId: dto.gatewayId,
+      deviceId: dto.deviceId,
       biometricVerified: isBiometricVerified,
+      bleVerified: isBleVerified,
+      geoVerified: isGeoVerified,
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+      verifiedAt,
+      finalStatus,
+      failureReason: allFactorsPassed ? null : failureReason,
     });
 
     this.eventLogger.event(ATTENDANCE_EVENT_NAMES.CHECKIN_REQUESTED, {
@@ -385,16 +419,34 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       studentId,
       decisionId: updatedDecision.id,
       gatewayId: dto.gatewayId,
-      challengeToken: dto.challengeToken,
       biometricVerified: isBiometricVerified,
+      bleVerified: isBleVerified,
+      geoVerified: isGeoVerified,
+      finalStatus,
     });
 
     this.eventLogger.event(ATTENDANCE_EVENT_NAMES.DECISION_CREATED, {
       sessionId: dto.sessionId,
       studentId,
       decisionId: updatedDecision.id,
-      status: nextStatus,
+      status: finalStatus,
     });
+
+    if (!allFactorsPassed) {
+      if (failureReason === 'OUTSIDE_CLASSROOM') {
+        throw new BadRequestException('Your device is outside the classroom attendance boundary.');
+      } else if (failureReason === 'LOCATION_UNAVAILABLE') {
+        throw new BadRequestException('Location permission or GPS acquisition is required for attendance verification.');
+      } else if (failureReason === 'BIOMETRIC_FAILED') {
+        throw new BadRequestException('OS biometric authentication failed. Please verify with fingerprint or Face ID.');
+      } else if (failureReason === 'BLE_NOT_VERIFIED') {
+        throw new BadRequestException('BLE proximity verification failed. Please move closer to the ClassPod gateway.');
+      } else if (failureReason === 'DEVICE_NOT_REGISTERED') {
+        throw new BadRequestException('Device not registered for this account.');
+      } else {
+        throw new BadRequestException(explanation);
+      }
+    }
 
     return updatedDecision;
   }
@@ -745,12 +797,17 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    const totalEnrolled = decisions.length || 32;
+    const totalEnrolled = decisions.length || 0;
+    const verified = decisions.filter(
+      (d) => d.status === AttendanceDecisionStatus.PRESENT || d.status === AttendanceDecisionStatus.VERIFIED,
+    ).length;
     const checkedIn = decisions.filter((d) => d.status === AttendanceDecisionStatus.CHECKED_IN).length;
-    const verified = decisions.filter((d) => d.status === AttendanceDecisionStatus.VERIFIED).length;
     const pendingVerification = decisions.filter((d) => d.status === AttendanceDecisionStatus.PENDING).length;
     const absent = decisions.filter(
-      (d) => d.status === AttendanceDecisionStatus.EXPIRED || d.status === AttendanceDecisionStatus.REJECTED
+      (d) =>
+        d.status === AttendanceDecisionStatus.EXPIRED ||
+        d.status === AttendanceDecisionStatus.REJECTED ||
+        d.status === AttendanceDecisionStatus.NOT_PRESENT,
     ).length;
 
     const now = new Date();

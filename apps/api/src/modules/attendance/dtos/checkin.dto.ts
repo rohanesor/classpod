@@ -21,10 +21,16 @@ export class CheckinDto {
   @IsOptional()
   bleRssi?: number;
 
-  @IsOptional()
-  biometricAssertion?: any;
-
   @IsBoolean()
   @IsOptional()
   biometricVerified?: boolean;
+
+  @IsNumber()
+  @IsOptional()
+  latitude?: number;
+
+  @IsNumber()
+  @IsOptional()
+  longitude?: number;
 }
+

@@ -36,7 +36,8 @@ import {
   ShieldCheck,
   Smartphone,
   CheckCircle2,
-  Fingerprint,
+  MapPin,
+  Globe,
 } from 'lucide-react';
 import { getInstallationUuid } from '@/lib/device-id';
 import { useAttendanceCameraFlow } from '@/hooks/use-attendance-camera-flow';
@@ -52,6 +53,7 @@ export interface Pod {
   semester: string;
   section: string;
   joinCode: string;
+  geoBoundary?: { lat: number; lng: number }[] | null;
   status: 'ACTIVE' | 'ARCHIVED';
   teacherId: string;
 }
@@ -100,6 +102,13 @@ export default function PodsPage() {
     section: '',
   });
   const [joinCode, setJoinCode] = useState('');
+
+  // Geo Spatial Environment States
+  const [enableGeoBoundary, setEnableGeoBoundary] = useState(false);
+  const [geoBoundary, setGeoBoundary] = useState<{ lat: string; lng: string }[]>(
+    Array(8).fill({ lat: '', lng: '' })
+  );
+  const [geoError, setGeoError] = useState<string | null>(null);
 
   // Attendance student states
   const [activeSession, setActiveSession] = useState<any | null>(null);
@@ -650,11 +659,20 @@ export default function PodsPage() {
   const getStatusBadge = (status: string) => {
     const normalizedStatus = status?.toUpperCase();
     switch (normalizedStatus) {
+      case 'PRESENT':
       case 'VERIFIED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-            <Fingerprint className="h-3.5 w-3.5" />
-            <span>Biometric Verified</span>
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            <span>PRESENT</span>
+          </span>
+        );
+      case 'NOT_PRESENT':
+      case 'REJECTED':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/15 text-rose-600 border border-rose-500/30">
+            <AlertCircle className="h-3.5 w-3.5" />
+            <span>NOT PRESENT</span>
           </span>
         );
       case 'CHECKED_IN':
@@ -673,12 +691,6 @@ export default function PodsPage() {
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-muted text-muted-foreground border border-muted-foreground/20">
             Expired
-          </span>
-        );
-      case 'REJECTED':
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-destructive/10 text-destructive border border-destructive/20">
-            Rejected
           </span>
         );
       default:
@@ -724,6 +736,73 @@ export default function PodsPage() {
     }
   };
 
+  // Validates the 8 geo-boundary coordinate inputs
+  const validateBoundaryInputs = () => {
+    if (!enableGeoBoundary) return { valid: true, data: null };
+
+    const parsed: { lat: number; lng: number }[] = [];
+    for (let i = 0; i < 8; i++) {
+      const latStr = geoBoundary[i]?.lat?.trim();
+      const lngStr = geoBoundary[i]?.lng?.trim();
+      if (!latStr || !lngStr) {
+        return { valid: false, error: `Point ${i + 1} must have both latitude and longitude.` };
+      }
+      const lat = parseFloat(latStr);
+      const lng = parseFloat(lngStr);
+      if (isNaN(lat) || lat < -90 || lat > 90) {
+        return { valid: false, error: `Point ${i + 1} latitude (${latStr}) must be between -90 and 90 degrees.` };
+      }
+      if (isNaN(lng) || lng < -180 || lng > 180) {
+        return { valid: false, error: `Point ${i + 1} longitude (${lngStr}) must be between -180 and 180 degrees.` };
+      }
+      parsed.push({ lat, lng });
+    }
+
+    // Check duplicate consecutive points
+    for (let i = 0; i < 8; i++) {
+      const next = (i + 1) % 8;
+      const currP = parsed[i];
+      const nextP = parsed[next];
+      if (currP && nextP && Math.abs(currP.lat - nextP.lat) < 1e-6 && Math.abs(currP.lng - nextP.lng) < 1e-6) {
+        return { valid: false, error: `Points ${i + 1} and ${next + 1} are identical duplicate coordinates.` };
+      }
+    }
+
+    return { valid: true, data: parsed };
+  };
+
+  // Helper to generate an 8-point perimeter octagon (~15m radius) around user's GPS
+  const handleAutoPerimeter = () => {
+    if (!navigator.geolocation) {
+      setGeoError('Geolocation is not supported by your browser.');
+      return;
+    }
+    setGeoError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const centerLat = pos.coords.latitude;
+        const centerLng = pos.coords.longitude;
+        const rLat = 0.00014; // ~15.5 meters in latitude
+        const rLng = 0.00014 / Math.max(0.1, Math.cos((centerLat * Math.PI) / 180));
+
+        const points = [];
+        for (let i = 0; i < 8; i++) {
+          const angle = (i * 2 * Math.PI) / 8;
+          points.push({
+            lat: (centerLat + rLat * Math.sin(angle)).toFixed(6),
+            lng: (centerLng + rLng * Math.cos(angle)).toFixed(6),
+          });
+        }
+        setGeoBoundary(points);
+        setEnableGeoBoundary(true);
+      },
+      (err) => {
+        setGeoError('Failed to acquire GPS location: ' + err.message);
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
   // Edit Pod handler
   const handleEditPod = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -732,10 +811,22 @@ export default function PodsPage() {
       setActionError('Name and Subject Code are required.');
       return;
     }
+
+    const geoVal = validateBoundaryInputs();
+    if (!geoVal.valid) {
+      setGeoError(geoVal.error || 'Invalid classroom boundary coordinates.');
+      return;
+    }
+    setGeoError(null);
+
     setIsActionPending(true);
     setActionError(null);
     try {
-      await apiClient.patch(`/pods/${selectedPod.id}`, formData);
+      const payload = {
+        ...formData,
+        geoBoundary: enableGeoBoundary ? geoVal.data : null,
+      };
+      await apiClient.patch(`/pods/${selectedPod.id}`, payload);
       setIsEditOpen(false);
       setSelectedPod(null);
       resetForm();
@@ -757,6 +848,15 @@ export default function PodsPage() {
       semester: pod.semester || '',
       section: pod.section || '',
     });
+
+    if (pod.geoBoundary && Array.isArray(pod.geoBoundary) && pod.geoBoundary.length === 8) {
+      setGeoBoundary(pod.geoBoundary.map((p: any) => ({ lat: String(p.lat), lng: String(p.lng) })));
+      setEnableGeoBoundary(true);
+    } else {
+      setGeoBoundary(Array(8).fill({ lat: '', lng: '' }));
+      setEnableGeoBoundary(false);
+    }
+    setGeoError(null);
     setIsEditOpen(true);
   };
 
@@ -1379,9 +1479,112 @@ export default function PodsPage() {
                   placeholder="Provide a brief description or syllabus overview..."
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={3}
+                  rows={2}
                   className="w-full p-3 rounded-md border border-input bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 resize-none"
                 />
+              </div>
+
+              {/* GEO SPATIAL ENVIRONMENT */}
+              <div className="border rounded-xl p-4 bg-muted/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-primary" />
+                    <div>
+                      <h3 className="text-xs font-bold text-foreground">Geo Spatial Environment</h3>
+                      <p className="text-[11px] text-muted-foreground">Enforce 8-point classroom attendance boundary polygon</p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enableGeoBoundary}
+                      onChange={(e) => {
+                        setEnableGeoBoundary(e.target.checked);
+                        if (e.target.checked && geoBoundary.every((p) => !p.lat && !p.lng)) {
+                          handleAutoPerimeter();
+                        }
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+
+                {geoError && (
+                  <div className="flex items-center gap-2 p-2.5 text-xs bg-destructive/10 border border-destructive/20 text-destructive rounded-lg">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>{geoError}</span>
+                  </div>
+                )}
+
+                {enableGeoBoundary && (
+                  <div className="space-y-2.5 pt-1 animate-in fade-in duration-200">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-muted-foreground text-[11px]">8 Coordinate Vertex Pairs</span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleAutoPerimeter}
+                          className="h-6 text-[10px] px-2 gap-1 font-bold bg-background"
+                        >
+                          <Globe className="h-3 w-3 text-primary" />
+                          <span>Autofill ~15m Around Me</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setGeoBoundary(Array(8).fill({ lat: '', lng: '' }))}
+                          className="h-6 text-[10px] px-1.5 text-muted-foreground hover:text-foreground"
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-1.5 border rounded-lg bg-background">
+                      {Array.from({ length: 8 }).map((_, idx) => (
+                        <div key={idx} className="p-2 rounded-md border bg-muted/30 space-y-1 text-xs">
+                          <span className="font-bold text-[11px] text-foreground flex items-center gap-1">
+                            Point {idx + 1}
+                          </span>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <div>
+                              <input
+                                type="text"
+                                placeholder="Latitude"
+                                value={geoBoundary[idx]?.lat || ''}
+                                onChange={(e) => {
+                                  const updated = [...geoBoundary];
+                                  const current = updated[idx] || { lat: '', lng: '' };
+                                  updated[idx] = { lat: e.target.value, lng: current.lng || '' };
+                                  setGeoBoundary(updated);
+                                }}
+                                className="w-full h-7 px-2 rounded border text-[11px] bg-background font-mono"
+                              />
+                            </div>
+                            <div>
+                              <input
+                                type="text"
+                                placeholder="Longitude"
+                                value={geoBoundary[idx]?.lng || ''}
+                                onChange={(e) => {
+                                  const updated = [...geoBoundary];
+                                  const current = updated[idx] || { lat: '', lng: '' };
+                                  updated[idx] = { lat: current.lat || '', lng: e.target.value };
+                                  setGeoBoundary(updated);
+                                }}
+                                className="w-full h-7 px-2 rounded border text-[11px] bg-background font-mono"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 border-t pt-4">
@@ -2268,38 +2471,112 @@ export default function PodsPage() {
                         <thead className="bg-muted text-muted-foreground text-xs uppercase font-bold border-b">
                           <tr>
                             <th className="px-4 py-3">Student</th>
-                            <th className="px-4 py-3">Email</th>
-                            <th className="px-4 py-3 text-right">Status</th>
+                            <th className="px-3 py-3 text-center">Device</th>
+                            <th className="px-3 py-3 text-center">Biometric</th>
+                            <th className="px-3 py-3 text-center">BLE</th>
+                            <th className="px-3 py-3 text-center">Location</th>
+                            <th className="px-4 py-3 text-right">Final Status</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y">
                           {(attendanceSession.decisions || []).length === 0 ? (
                             <tr>
-                              <td colSpan={3} className="px-4 py-8 text-center text-muted-foreground text-xs">
+                              <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground text-xs">
                                 No students currently enrolled in this pod.
                               </td>
                             </tr>
                           ) : (
-                            (attendanceSession.decisions || []).map((decision: any) => (
-                              <tr
-                                key={decision.id}
-                                className={`transition-all duration-500 border-l-2 ${
-                                  recentlyUpdated[decision.id]
-                                    ? `${recentlyUpdated[decision.id]} font-semibold border-l-primary`
-                                    : 'hover:bg-muted/30 border-l-transparent'
-                                }`}
-                              >
-                                <td className="px-4 py-3 font-medium text-foreground">
-                                  {decision.student?.name || 'Unknown Student'}
-                                </td>
-                                <td className="px-4 py-3 text-muted-foreground text-xs">
-                                  {decision.student?.email || 'N/A'}
-                                </td>
-                                <td className="px-4 py-3 text-right">
-                                  {getStatusBadge(decision.status)}
-                                </td>
-                              </tr>
-                            ))
+                            (attendanceSession.decisions || []).map((decision: any) => {
+                              const hasDevice = !!decision.student?.registeredDevice?.deviceId;
+                              const isBio =
+                                decision.signals?.some((s: any) => s.source === 'BIOMETRIC' && s.payload?.verified) ||
+                                decision.status === 'PRESENT' ||
+                                decision.status === 'VERIFIED';
+                              const isBle =
+                                decision.signals?.some((s: any) => s.source === 'BLE' && s.payload?.verified) ||
+                                decision.status === 'PRESENT' ||
+                                decision.status === 'VERIFIED';
+                              const isGeo =
+                                decision.signals?.some((s: any) => s.source === 'GEOLOCATION' && s.payload?.verified) ||
+                                decision.status === 'PRESENT';
+
+                              const isFailure =
+                                decision.status === 'NOT_PRESENT' || decision.status === 'REJECTED';
+
+                              return (
+                                <tr
+                                  key={decision.id}
+                                  className={`transition-all duration-300 ${
+                                    isFailure
+                                      ? 'bg-rose-500/5 hover:bg-rose-500/10'
+                                      : recentlyUpdated[decision.id]
+                                      ? `${recentlyUpdated[decision.id]} font-semibold`
+                                      : 'hover:bg-muted/30'
+                                  }`}
+                                >
+                                  <td className="px-4 py-3">
+                                    <div className="font-medium text-foreground">
+                                      {decision.student?.name || 'Unknown Student'}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {decision.student?.email || 'N/A'}
+                                    </div>
+                                    {isFailure && decision.explanation && (
+                                      <div className="text-[11px] text-rose-500 font-medium mt-0.5">
+                                        Reason: {decision.explanation}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    {hasDevice ? (
+                                      <span className="inline-flex items-center text-emerald-600 font-bold text-xs" title="Device Registered">
+                                        ✓
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center text-rose-500 font-bold text-xs" title="Unregistered Device">
+                                        ✗
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    {isBio ? (
+                                      <span className="inline-flex items-center text-emerald-600 font-bold text-xs" title="Biometric Verified">
+                                        ✓
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center text-rose-500 font-bold text-xs" title="Biometric Not Verified">
+                                        ✗
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    {isBle ? (
+                                      <span className="inline-flex items-center text-emerald-600 font-bold text-xs" title="BLE Proximity Verified">
+                                        ✓
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center text-rose-500 font-bold text-xs" title="BLE Missing">
+                                        ✗
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    {isGeo ? (
+                                      <span className="inline-flex items-center text-emerald-600 font-bold text-xs" title="Inside Classroom Boundary">
+                                        ✓
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center text-rose-500 font-bold text-xs" title="Outside Classroom Boundary">
+                                        ✗
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    {getStatusBadge(decision.status)}
+                                  </td>
+                                </tr>
+                              );
+                            })
                           )}
                         </tbody>
                       </table>
