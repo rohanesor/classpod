@@ -38,9 +38,12 @@ import {
   CheckCircle2,
   MapPin,
   Globe,
+  Fingerprint,
 } from 'lucide-react';
 import { getInstallationUuid } from '@/lib/device-id';
 import { useAttendanceCameraFlow } from '@/hooks/use-attendance-camera-flow';
+import { BiometricService } from '@/lib/biometric.service';
+import { LocationService } from '@/lib/location.service';
 import type { FrameDetection } from '@classpod/shared';
 
 
@@ -159,6 +162,21 @@ export default function PodsPage() {
     if (!user) return;
     fetchPods();
   }, [user, fetchPods]);
+
+  // Auto-register student device installation UUID
+  useEffect(() => {
+    if (user?.role?.toUpperCase() === 'STUDENT') {
+      const deviceId = getInstallationUuid();
+      apiClient
+        .post('/auth/device/register', {
+          deviceId,
+          platform: Capacitor.getPlatform(),
+        })
+        .catch(() => {
+          // Silent catch
+        });
+    }
+  }, [user]);
 
   // Copy join code handler
   const handleCopyCode = (code: string, id: string) => {
@@ -397,59 +415,96 @@ export default function PodsPage() {
     }
   }, [attendanceSession?.decisions]);
 
-  // Student check-in handler
+  // Student multi-factor check-in handler
   const handleCheckIn = async () => {
     if (!activeSession) return;
     setIsCheckinLoading(true);
     setAttendanceError(null);
 
-    let finalGatewayId = detectedGateway?.id || 'esp32-cam-node-1';
-    let finalChallengeToken = detectedGateway?.challengeToken || activeSession.challengeToken || 'CP123456';
-
-    // If BLE is still scanning on mobile, run a fast fallback scan before submitting
-    if (Capacitor.isNativePlatform() && bleStatus !== 'found') {
-      try {
-        const bleModule = await import('@capacitor-community/bluetooth-le');
-        const bleClient = bleModule.BleClient;
-        await bleClient.initialize();
-        await bleClient.requestLEScan(
-          { services: ['434c4153-5350-4f44-0000-000000000000'] },
-          (result: any) => {
-            if (result.device?.deviceId) {
-              finalGatewayId = result.device.deviceId;
-            }
-          }
-        );
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        await bleClient.stopLEScan();
-      } catch {
-        // Fallback to active session challenge
-      }
-    }
-
     try {
+      const sessionId = activeSession.session?.id || activeSession.id;
+      if (!sessionId) {
+        throw new Error('Active session ID not found. Please refresh.');
+      }
+      const deviceId = getInstallationUuid();
+
+      let finalGatewayId = detectedGateway?.id || 'esp32-cam-node-1';
+      let finalChallengeToken =
+        detectedGateway?.challengeToken ||
+        activeSession.session?.challengeToken ||
+        activeSession.challengeToken ||
+        'CP123456';
+
+      // 1. Native OS Biometrics / Device Credential Prompt
+      const bioResult = await BiometricService.authenticate('Touch sensor to verify attendance');
+      if (!bioResult.success) {
+        throw new Error(bioResult.error || 'Biometric authentication failed. Please touch sensor or confirm identity.');
+      }
+
+      // 2. High-Accuracy Classroom GPS Location
+      let latitude: number | undefined;
+      let longitude: number | undefined;
+      try {
+        const location = await LocationService.getCurrentLocation(8000);
+        latitude = location.latitude;
+        longitude = location.longitude;
+      } catch (locErr: any) {
+        throw new Error(locErr?.message || 'Location acquisition failed. Location permission is required.');
+      }
+
+      // 3. Scan for Native BLE Gateway (if mobile platform)
+      if (Capacitor.isNativePlatform() && bleStatus !== 'found') {
+        try {
+          const bleModule = await import('@capacitor-community/bluetooth-le');
+          const bleClient = bleModule.BleClient;
+          await bleClient.initialize();
+          let scannedGatewayId = '';
+          await bleClient.requestLEScan(
+            { services: ['434c4153-5350-4f44-0000-000000000000'] },
+            (result: any) => {
+              if (result.device?.deviceId) {
+                scannedGatewayId = result.device.deviceId;
+              }
+            }
+          );
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          await bleClient.stopLEScan();
+          if (scannedGatewayId) {
+            finalGatewayId = scannedGatewayId;
+          }
+        } catch {
+          // Fallback to detected gateway
+        }
+      }
+
+      // 4. Submit Multi-Factor Verification to Backend
       await apiClient.post('/attendance/checkin', {
-        sessionId: activeSession.id,
+        sessionId,
         gatewayId: finalGatewayId,
         challengeToken: finalChallengeToken,
-        deviceId: getInstallationUuid(),
-        isMobileApp: true,
+        deviceId,
+        isMobileApp: Capacitor.isNativePlatform(),
+        biometricVerified: true,
+        latitude,
+        longitude,
       });
-      // Set local state to CHECKED_IN to reflect immediate update
+
+      // Update local state to PRESENT
       setActiveSession((prev: any) => {
         if (!prev) return null;
         return {
           ...prev,
           studentDecision: {
             ...prev.studentDecision,
-            status: 'CHECKED_IN',
+            status: 'PRESENT',
           },
           decision: {
             ...prev.decision,
-            status: 'CHECKED_IN',
+            status: 'PRESENT',
           },
         };
       });
+      fetchPods();
     } catch (err: any) {
       setAttendanceError(err?.message || 'Failed to submit check-in. Please try again.');
     } finally {
@@ -1833,17 +1888,12 @@ export default function PodsPage() {
                           {isCheckinLoading ? (
                             <>
                               <Loader2 className="h-5 w-5 animate-spin" />
-                              <span>Verifying Proximity & Checking In...</span>
-                            </>
-                          ) : bleStatus === 'found' ? (
-                            <>
-                              <CheckCircle2 className="h-5 w-5" />
-                              <span>✓ In Range • Confirm I'm Here</span>
+                              <span>Verifying Biometrics & Location...</span>
                             </>
                           ) : (
                             <>
-                              <Bluetooth className="h-4 w-4 animate-pulse" />
-                              <span>Confirm I'm Here (Verify BLE)</span>
+                              <Fingerprint className="h-5 w-5 text-emerald-400" />
+                              <span>Verify Attendance (Biometrics + Location)</span>
                             </>
                           )}
                         </Button>

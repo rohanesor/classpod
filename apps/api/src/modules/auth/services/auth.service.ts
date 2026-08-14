@@ -195,24 +195,15 @@ export class AuthService {
 
   // Bind installation UUID to user
   async registerDevice(userId: string, dto: RegisterDeviceDto, userAgent?: string) {
-    const existingDevice = await this.prisma.registeredDevice.findUnique({
+    const device = await this.prisma.registeredDevice.upsert({
       where: { userId },
-    });
-
-    if (existingDevice) {
-      if (existingDevice.deviceId === dto.deviceId) {
-        return {
-          registered: true,
-          message: 'Device already registered for this account',
-          device: existingDevice,
-        };
-      }
-      throw new BadRequestException('Device not registered for this account.');
-    }
-
-    const newDevice = await this.prisma.registeredDevice.create({
-      data: {
+      create: {
         userId,
+        deviceId: dto.deviceId,
+        platform: dto.platform || 'android',
+        userAgent,
+      },
+      update: {
         deviceId: dto.deviceId,
         platform: dto.platform || 'android',
         userAgent,
@@ -222,14 +213,14 @@ export class AuthService {
     this.eventLogger.audit('auth.device.registered', {
       actorUserId: userId,
       entityType: 'RegisteredDevice',
-      entityId: newDevice.id,
+      entityId: device.id,
       deviceId: dto.deviceId,
     });
 
     return {
       registered: true,
       message: 'Device registered successfully',
-      device: newDevice,
+      device,
     };
   }
 

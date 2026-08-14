@@ -284,9 +284,21 @@ export class AttendanceService implements OnModuleInit, OnModuleDestroy {
     let failureReason: string | null = null;
 
     // Factor 1: Device Registration & Binding
-    const registeredDevice = await this.prisma.registeredDevice.findUnique({
+    let registeredDevice = await this.prisma.registeredDevice.findUnique({
       where: { userId: studentId },
     });
+
+    // Auto-bind device on check-in if not yet bound
+    if (!registeredDevice && dto.deviceId) {
+      registeredDevice = await this.prisma.registeredDevice.create({
+        data: {
+          userId: studentId,
+          deviceId: dto.deviceId,
+          platform: dto.isMobileApp ? 'android' : 'web',
+        },
+      });
+    }
+
     const isDeviceRegistered = !!registeredDevice && registeredDevice.deviceId === dto.deviceId;
     if (!isDeviceRegistered) {
       failureReason = 'DEVICE_NOT_REGISTERED';
